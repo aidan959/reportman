@@ -1,0 +1,20 @@
+{
+    "files.associations": {
+        "*.pro": "prolog",
+        "*.pl": "prolog",
+        "stat.h": "c",
+        "types.h": "c",
+        "cstdlib": "c",
+        "become_daemon.h": "c",
+        "stdio.h": "c",
+        "stdlib.h": "c",
+        "unistd.h": "c",
+        "syslog.h": "c",
+        "stdbool.h": "c",
+        "daemon_init.h": "c",
+        "signalfd.h": "c",
+        "inotify.h": "c",
+        "signal.h": "c",
+        "directory_init.h": "c"
+    }
+}
