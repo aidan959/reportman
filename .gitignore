@@ -2,4 +2,3 @@ examples/
 *.out
 *.o
 bin
-obj
