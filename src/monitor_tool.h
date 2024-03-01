@@ -48,7 +48,7 @@ enum
      (long)(event)->len <= (long)(length))
 
 /* Setup inotify notifications (IN) mask. All these defined in inotify.h. */
-static int event_mask =
+int mon_t_event_mask =
     (IN_ACCESS |        // File was accessed
      IN_ATTRIB |        // File's metadata was changed
      IN_MODIFY |        // File data was modified.
@@ -63,9 +63,9 @@ static int event_mask =
      IN_MOVED_TO);      // File moved to directory
 
 
-static void __event_process(struct inotify_event *event, monitor_t *monitor);
-static void __shutdown_inotify(int inotify_fd, monitor_t *monitor);
-static int __initialize_inotify(int num_paths, const char **paths, monitor_t *monitor);
-static void __shutdown_signals(int signal_fd);
-static int __initialize_signals(void);
+// static void __event_process(struct inotify_event *event, monitor_t *monitor);
+// static void __shutdown_inotify(int inotify_fd, monitor_t *monitor);
+// static int __initialize_inotify(int num_paths, const char **paths, monitor_t *monitor);
+// static void __shutdown_signals(int signal_fd);
+// static int __initialize_signals(void);
 int monitor_paths(int num_paths, const char **dirs);

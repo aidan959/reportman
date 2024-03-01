@@ -105,7 +105,7 @@ __initialize_inotify(int num_paths,
         monitor->monitors[i].path = strdup(paths[i]);
         if ((monitor->monitors[i].wd = inotify_add_watch(inotify_fd,
                                                          monitor->monitors[i].path,
-                                                         event_mask)) < 0)
+                                                         mon_t_event_mask)) < 0)
         {
             syslog(LOG_CRIT, "Couldn't add monitor in directory '%s': '%s'\n",
                    monitor->monitors[i].path,

@@ -6,21 +6,17 @@
 #include "daemonize.h"
 #include "directory_tool.h"
 #include "monitor_tool.h"
+#include "cto_daemon.h"
 
 const char REPORTS_DIRECTORY[] = "/srv/allfactnobreak/reports";
 const char BACKUP_DIRECTORY[] = "/srv/allfactnobreak/backup";
 const char DASHBOARD_DIRECTORY[] = "/srv/allfactnobreak/dashboard";
 
-typedef struct
-{
-    bool make_daemon;
-} execution_arguments;
-
-void process_args(int argc, char *argv[], execution_arguments *args);
+void process_args(int argc, char *argv[], execution_arguments_t *args);
 
 int main(int argc, char *argv[])
 {
-    execution_arguments args = {.make_daemon = true };
+    execution_arguments_t args = {.make_daemon = true };
 
     process_args(argc, argv, &args);
 
@@ -74,7 +70,7 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-void process_args(int argc, char *argv[], execution_arguments *args)
+void process_args(int argc, char *argv[], execution_arguments_t *args)
 {
     int i;
     for (i = 1; i < argc; i++) 

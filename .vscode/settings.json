@@ -15,6 +15,7 @@
         "signalfd.h": "c",
         "inotify.h": "c",
         "signal.h": "c",
-        "directory_init.h": "c"
+        "directory_init.h": "c",
+        "directory_tool.h": "c"
     }
 }
