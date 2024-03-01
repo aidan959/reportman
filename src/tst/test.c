@@ -6,7 +6,7 @@
 #include <signal.h>
 #include <time.h>
 #include <syslog.h>
-
+#include "test.h"
 void handler(int signo, siginfo_t * info, void * context) {
     printf("Timer expired!\n");
     syslog(LOG_NOTICE,"Handler hit.");
@@ -25,7 +25,7 @@ int main() {
     // Set up signal handler
     act.sa_flags = SA_SIGINFO;
     act.sa_handler = &handler1;
-    act.sa_sigaction = &handler;
+    //act.sa_sigaction = &handler;
     sigemptyset(&act.sa_mask);
     if (sigaction(SIGRTMIN, &act, NULL) == -1) {
         perror("sigaction");

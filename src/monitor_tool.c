@@ -12,6 +12,21 @@
 #include <sys/inotify.h>
 #include "monitor_tool.h"
 
+/* Setup inotify notifications (IN) mask. All these defined in inotify.h. */
+int mon_t_event_mask =
+    (IN_ACCESS |        // File was accessed
+     IN_ATTRIB |        // File's metadata was changed
+     IN_MODIFY |        // File data was modified.
+     IN_CREATE |        // File created in directory
+     IN_DELETE |        // File deleted in directory
+     IN_OPEN |          // File was openend
+     IN_CLOSE_WRITE |   // Writable file closed
+     IN_CLOSE_NOWRITE | // Unwritable file closed
+     IN_DELETE_SELF |   // Self was deleted
+     IN_MOVE_SELF |     // Self was moved
+     IN_MOVED_FROM |    // File moved from directory
+     IN_MOVED_TO);      // File moved to directory
+
 static void
 __event_process(struct inotify_event *event, monitor_t *monitor)
 {
