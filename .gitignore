@@ -3,3 +3,5 @@ examples/
 *.o
 bin
 obj
+sample/
+*.txt

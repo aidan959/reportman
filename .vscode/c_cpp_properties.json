@@ -38,7 +38,6 @@
                 "${workspaceFolder}/**"
             ],
             "defines": [],
-            "compilerPath": "/usr/sbin/gcc",
             "cStandard": "c23",
             "cppStandard": "gnu++17",
             "intelliSenseMode": "linux-gcc-x64"

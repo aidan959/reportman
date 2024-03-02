@@ -1,7 +1,7 @@
 {
     "files.associations": {
-        "*.pro": "prolog",
         "*.pl": "prolog",
+        "*.pro": "prolog",
         "stat.h": "c",
         "types.h": "c",
         "cstdlib": "c",
@@ -16,6 +16,16 @@
         "inotify.h": "c",
         "signal.h": "c",
         "directory_init.h": "c",
-        "directory_tool.h": "c"
-    }
+        "directory_tool.h": "c",
+        "time.h": "c",
+        "error_t.h": "c",
+        "cto_daemon.h": "c",
+        "string_view": "c",
+        "errno.h": "c",
+        "string.h": "c",
+        "sha.h": "c",
+        "dirent.h": "c",
+        "backup_tool.h": "c"
+    },
+    "C_Cpp.default.compilerPath": "/usr/sbin/gcc"
 }

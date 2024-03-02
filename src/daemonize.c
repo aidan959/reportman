@@ -40,7 +40,7 @@ void become_daemon(bool use_flags)
     chdir("/");
     if(!(use_flags & D_NO_FILE_CLOSE))  // close all open files
     {
-        int maxfd = sysconf(_SC_OPEN_MAX);
+        long maxfd = sysconf(_SC_OPEN_MAX);
 
         if(maxfd == -1)
             maxfd = 8192;

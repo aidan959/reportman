@@ -1,6 +1,6 @@
 CC=/usr/sbin/gcc
 CFLAGS=-Wextra -Wall -Wfloat-equal -Wundef -Wshadow -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wwrite-strings -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -c
-
+LIBS=-lcrypto
 SRC=src
 OBJ=obj
 BIN=bin
@@ -29,11 +29,12 @@ TST_NAME=$(BIN)/reportmandtst
 
 
 all: $(PROG_NAME)
+test: $(TST_NAME)
+
 
 $(PROG_NAME): $(OBJECTS)
 	@mkdir -p $(@D)
-	$(CC) $^ -o $@
-	
+	$(CC) $^ -o $@ $(LIBS)
 
 $(OBJ)/$(MAIN).o: $(SRC)/$(MAIN).c
 	@mkdir -p $(@D)
@@ -47,11 +48,12 @@ install: $(PROG_NAME) | $(PROG_NAME)
 	@if [ "$(shell id -u)" != "0" ]; then\
 		$(warning  This script must be run as root to install to $(PREFIX), and add service to systemctl)echo;\
 	fi
+	sudo setcap 'CAP_WAKE_ALARM' $@
 	sudo install -m 744 $^ $(PREFIX)/
 
 $(TST_NAME): $(OBJECTS_TST)
 	@mkdir -p $(@D)
-	$(CC) $^ -o $@
+	$(CC) $^ -o $@ $(LIBS)
 
 $(OBJ_TST)/$(MAIN_TST).o: $(SRC_TST)/$(MAIN_TST).c
 	@mkdir -p $(@D)
@@ -62,7 +64,10 @@ $(OBJ_TST)/%.o: $(SRC_TST)/%.c $(SRC_TST)/%.h
 	$(CC) $(CFLAGS) $< -o $@ 
 
 run: | $(PROG_NAME)
-	./bin/$(PROG_NAME)
+	./$(PROG_NAME)
+
+runtest: | $(TST_NAME)
+	./$(TST_NAME)
 
 clean:
 	rm -R ./bin ./obj || true

@@ -55,4 +55,4 @@ enum
 // static int __initialize_inotify(int num_paths, const char **paths, monitor_t *monitor);
 // static void __shutdown_signals(int signal_fd);
 // static int __initialize_signals(void);
-int monitor_paths(int num_paths, const char **dirs);
+int monitor_paths(unsigned int num_paths, const char **dirs);

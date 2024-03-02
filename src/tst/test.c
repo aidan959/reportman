@@ -1,74 +1,150 @@
 #define _POSIX_C_SOURCE 199309L // for POSIX timers
-
-#include <stdio.h>
+#define OPENSSL_API_COMPAT 10002
+#include <openssl/sha.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <signal.h>
-#include <time.h>
+#include <stdio.h>
+#include <dirent.h>
+#include <string.h>
+#include <sys/stat.h>
 #include <syslog.h>
+#include <errno.h>
 #include "test.h"
-void handler(int signo, siginfo_t * info, void * context) {
-    printf("%d, %p\n", signo, context);
-    printf("%d\n", info->si_code);
 
-    printf("Timer expired!\n");
-    syslog(LOG_NOTICE,"Handler hit.");
-    // Perform the action you want here
+#define TRANSACT_SUCCESS 0
+#define TRANSACT_ERR_OPEN -1
+#define TRANSACT_HASH_FAILED -2
+
+int verify_files(FILE *source, FILE * dest);
+int transact_move_file(const char *source_path, const char *dest_path);
+void hash_file(unsigned char * sha256_hash, FILE *source); 
+void move_directory(const char *source, const char *destination);
+
+/// @brief Moves file from source to destination - hashes the file before removing.
+/// @param source_path 
+/// @param dest_path 
+/// @return Successfully moved file.
+int transact_move_file(const char *source_path, const char *dest_path) {
+    FILE *source, *dest;
+    char buffer[1024];
+    size_t bytes;
+
+    source = fopen(source_path, "rb");
+    if (source == NULL) {
+        syslog(LOG_ERR, "Error opening source file: %s", strerror(errno));
+        return TRANSACT_ERR_OPEN;
+    }
+
+    dest = fopen(dest_path, "wb");
+    if (dest == NULL) {
+        syslog(LOG_ERR, "Error opening destination file: %s", strerror(errno));
+        fclose(source);
+        return TRANSACT_ERR_OPEN;
+    }
+
+    while ((bytes = fread(buffer, sizeof(char), sizeof(buffer), source)) > 0) {
+        fwrite(buffer, sizeof(char), bytes, dest);
+    }
+    
+    if (verify_files(source, dest) < 0) {
+        syslog(LOG_ERR,
+            "Destination file (%s) hash did not match source file (%s) hash. File will not be removed from source.",source_path, dest_path);
+        fclose(dest);
+        fclose(source);
+        return TRANSACT_HASH_FAILED;
+    }
+
+    fclose(dest);
+    fclose(source);
+
+    remove(source_path);
+    return TRANSACT_SUCCESS;
 }
 
-void handler1(int signo) {
-    printf("%d\n", signo);
+/// @brief Compares two files SHA256 hash values.
+/// @param source
+/// @param dest 
+int verify_files(FILE *source, FILE * dest){
+    unsigned char source_hash[SHA256_DIGEST_LENGTH];
+    unsigned char dest_hash[SHA256_DIGEST_LENGTH];
 
-    printf("Timer expired1!\n");
-    syslog(LOG_NOTICE,"Handler hit.");
-    // Perform the action you want here
+    hash_file(source_hash, source);
+    hash_file(dest_hash, dest);
+
+    if (memcmp(source_hash, dest_hash, SHA256_DIGEST_LENGTH)==0){
+        return 0;
+    }
+
+    return -1;
+    
+
 }
+
+/// @brief Hashes source file's bytes.
+/// @param sh256_hash returns the hashed version of source into this.
+/// @param source will reset seek to 0 and seek to end
+void hash_file(unsigned char * sha256_hash, FILE *source){ 
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    unsigned char buffer[1024];
+    size_t bytes = 0;
+    if (fseek(source, 0, SEEK_SET) < 0) {
+        syslog(LOG_ERR, "Error seeking: %s", strerror(errno));
+    }
+
+    while ((bytes = fread(buffer, sizeof(char), sizeof(buffer), source))) {
+        SHA256_Update(&sha256, buffer, bytes);
+    }
+
+    SHA256_Final(sha256_hash, &sha256);
+}
+void move_directory(const char *source, const char *destination) {
+    DIR *dir;
+    struct dirent *entry;
+    struct stat statbuf;
+    char src_path[1024];
+    char dest_path[1024];
+
+    // Create the destination directory
+    mkdir(destination, 0777);
+
+    if ((dir = opendir(source)) == NULL) {
+        perror("Failed to open directory");
+        return;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        if(snprintf(src_path, sizeof(src_path), "%s/%s", source, entry->d_name) < 0){
+            syslog(LOG_CRIT, "Snprintf: %s",  strerror(errno));
+        }
+        if(snprintf(dest_path, sizeof(dest_path), "%s/%s", destination, entry->d_name)){
+            syslog(LOG_CRIT, "Snprintf: %s",  strerror(errno));
+        }
+
+        if (stat(src_path, &statbuf) == -1) {
+            syslog(LOG_CRIT,"Stat: %s", strerror(errno));
+            continue;
+        }
+        
+        if (S_ISDIR(statbuf.st_mode)) {
+            move_directory(src_path, dest_path);
+            continue;
+        }
+        syslog(LOG_NOTICE, "Backing up %s to %s\n", src_path, dest_path);
+        if(transact_move_file(src_path, dest_path) != TRANSACT_SUCCESS){
+            syslog(LOG_ERR, "Backing up %s to %s FAILED. TRANSACT CANCELLED.\n", src_path, dest_path);
+
+        }
+        
+    }
+    closedir(dir);
+}
+
+
 int main(void) {
-    timer_t timerid;
-    struct sigaction act;
-
-    // Set up signal handler
-    act.sa_flags = SA_SIGINFO;
-    act.sa_handler = &handler1;
-    //act.sa_sigaction = &handler;
-    sigemptyset(&act.sa_mask);
-    if (sigaction(SIGRTMIN, &act, NULL) == -1) {
-        perror("sigaction");
-        exit(EXIT_FAILURE);
-    }
-
-    struct sigevent sev;
-    // Set up timer
-    sev.sigev_notify = SIGEV_SIGNAL;
-    sev.sigev_signo = SIGRTMIN;
-    sev.sigev_value.sival_ptr = &timerid;
-    if (timer_create(CLOCK_REALTIME, &sev, &timerid) == -1) {
-        perror("timer_create");
-        exit(EXIT_FAILURE);
-    }
-    printf("%p\n", timerid);
-    struct itimerspec its;
-    // Set timer expiration time
-    its.it_value.tv_sec = 5; // 5 seconds from now
-    its.it_value.tv_nsec = 0;
-    its.it_interval.tv_sec = 0;
-    its.it_interval.tv_nsec = 0;
-
-    // Start the timer
-    if (timer_settime(timerid, 0, &its, NULL) == -1) {
-        perror("timer_settime");
-        exit(EXIT_FAILURE);
-    }
-    printf("Here\n");
-    // Wait forever
-    while (1) {
-        sleep(1);
-        struct itimerspec value;
-
-        timer_gettime(timerid, &value);
-
-        printf("%ld and %ld", value.it_value.tv_sec, value.it_interval.tv_sec);
-    }
-
+    move_directory("sample/source", "sample/destination");
     return 0;
 }

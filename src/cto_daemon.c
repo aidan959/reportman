@@ -3,34 +3,41 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <stdbool.h>
+#include <time.h>
 #include "daemonize.h"
 #include "directory_tool.h"
+#include "backup_tool.h"
+
 #include "monitor_tool.h"
 #include "cto_daemon.h"
 
-const char REPORTS_DIRECTORY[] = "/srv/allfactnobreak/reports";
-const char BACKUP_DIRECTORY[] = "/srv/allfactnobreak/backup";
-const char DASHBOARD_DIRECTORY[] = "/srv/allfactnobreak/dashboard";
+
 
 void process_args(int argc, char *argv[], execution_arguments_t *args);
 
 int main(int argc, char *argv[])
 {
-    execution_arguments_t args = {.make_daemon = true };
+    execution_arguments_t args = {.make_daemon = true};
 
     process_args(argc, argv, &args);
 
     const char *dirs[] = {
         REPORTS_DIRECTORY,
         BACKUP_DIRECTORY,
-        DASHBOARD_DIRECTORY};
+        DASHBOARD_DIRECTORY
+    };
 
     if (args.make_daemon)
         become_daemon(0);
 
-    init_directories(
-        sizeof(dirs) / sizeof(char *),
-        dirs);
+    init_directories( sizeof(dirs) / sizeof(char *), dirs);
+    time_t queue_time = time(NULL) + 5;
+    time_t queue_interval = 100;
+
+    backup_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, queue_time, queue_interval );
+    while(1) {
+        sleep(1);
+    }
     bool is_daemon;
     switch (fork())
     {
@@ -73,10 +80,10 @@ int main(int argc, char *argv[])
 void process_args(int argc, char *argv[], execution_arguments_t *args)
 {
     int i;
-    for (i = 1; i < argc; i++) 
+    for (i = 1; i < argc; i++)
     {
 
-        if (strcmp(argv[i], "--no-daemon") == 0) 
+        if (strcmp(argv[i], "--no-daemon") == 0)
         {
             args->make_daemon = false; /* This is used as a boolean value. */
             continue;

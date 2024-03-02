@@ -13,7 +13,7 @@
 #include "monitor_tool.h"
 
 /* Setup inotify notifications (IN) mask. All these defined in inotify.h. */
-int mon_t_event_mask =
+unsigned int mon_t_event_mask =
     (IN_ACCESS |        // File was accessed
      IN_ATTRIB |        // File's metadata was changed
      IN_MODIFY |        // File data was modified.
@@ -96,10 +96,10 @@ __shutdown_inotify(int inotify_fd, monitor_t *monitor)
 }
 
 static int
-__initialize_inotify(int num_paths,
+__initialize_inotify(unsigned int num_paths,
                      const char **paths, monitor_t *monitor)
 {
-    int i;
+    
     int inotify_fd;
 
     // create a notifier
@@ -111,11 +111,11 @@ __initialize_inotify(int num_paths,
     }
 
     // create directory monitors
-    monitor->no_monitors = num_paths;
+    monitor->no_monitors = (int) num_paths;
     monitor->monitors = malloc(num_paths * sizeof(dir_monitored_t));
 
     // add monitor for each directory to watch
-    for (i = 0; i < num_paths; ++i)
+    for (unsigned int i = 0; i < num_paths; ++i)
     {
         monitor->monitors[i].path = strdup(paths[i]);
         if ((monitor->monitors[i].wd = inotify_add_watch(inotify_fd,
@@ -169,7 +169,7 @@ static int __initialize_signals(void)
     return signal_fd;
 }
 
-int monitor_paths(int num_paths,
+int monitor_paths(unsigned int num_paths,
                   const char **dirs)
 {
     int signal_fd;
@@ -218,11 +218,11 @@ int monitor_paths(int num_paths,
             struct signalfd_siginfo fdsi;
 
             // signal size received from read was incorrect
-            size_t read_size;
+            ssize_t read_size;
             if ((read_size = read(fds[FD_POLL_SIGNAL].fd, &fdsi, sizeof(fdsi))) != sizeof(fdsi))
             {
                 syslog(LOG_CRIT,
-                       "Couldn't read signal, wrong size read(fsdi '%d' != read() '%d')",
+                       "Couldn't read signal, wrong size read(fsdi '%ld' != read() '%ld')",
                        sizeof(fdsi),
                        read_size);
                 exit(EXIT_FAILURE);
@@ -244,7 +244,7 @@ int monitor_paths(int num_paths,
         if (fds[FD_POLL_INOTIFY].revents & POLLIN)
         {
             char buffer[INOTIFY_BUFFER_SIZE];
-            size_t length;
+            ssize_t length;
 
             // reads all events we can fit in the buffer
             if ((length = read(fds[FD_POLL_INOTIFY].fd,

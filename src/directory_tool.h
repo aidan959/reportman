@@ -8,5 +8,4 @@
 #include <unistd.h>
 //static int __create_dir_if_not_exist(const char *directory, int mode);
 int init_directories(int num_dirs, const char **dirs);
-int backup_directories(int num_dirs, const char **dirs);
 
