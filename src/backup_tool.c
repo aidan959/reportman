@@ -26,7 +26,7 @@ static void __start_timer(timer_t timerid, struct itimerspec * its);
 /// @brief Sets a timer with callback to a backup function.
 /// @param source_directory 
 /// @param target_directory 
-/// @param time Must be an absolute value. Time in seconds for timer to set off atTODO / maybe change?
+/// @param time Must be an te value. Time in seconds for timer to set off at TODO / maybe change?
 /// @param repeat_interval After first time is reached, 
 /// @return 
 timer_t backup_at_time(const char * source_directory, const char * target_directory, time_t time, time_t repeat_interval){
@@ -55,15 +55,18 @@ timer_t backup_at_time(const char * source_directory, const char * target_direct
     return timer_id;
 }
 static void __back_up_directory(int sigg_no){
+    openlog("backup_tool", LOG_PID, LOG_DAEMON);
     switch (sigg_no){
-        case __SIGRTMIN:
-            syslog(LOG_NOTICE, "Backup executed by timer.");
+        case 34:
             break;
         default:
             syslog(LOG_WARNING, "Timer receieved unexpected signal: %s (%d)", strsignal(sigg_no), sigg_no);
             return;
     }
-    transact_move_file(__back_up_source_directory, __back_up_target_directory);
+    syslog(LOG_NOTICE, "Backup of %s to %s executed by timer.", __back_up_source_directory, __back_up_target_directory);
+    move_directory(__back_up_source_directory, __back_up_target_directory);
+    syslog(LOG_NOTICE, "Backup of %s to %s completed by timer.", __back_up_source_directory, __back_up_target_directory);
+
 }
 
 
@@ -164,13 +167,14 @@ void move_directory(const char *source, const char *destination) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
-
-        if(snprintf(src_path, sizeof(src_path), "%s/%s", source, entry->d_name) < 0){
+        snprintf(src_path, sizeof(src_path), "%s/%s", source, entry->d_name);
+        snprintf(dest_path, sizeof(dest_path), "%s/%s", destination, entry->d_name);
+        /*if(snprintf(src_path, sizeof(src_path), "%s/%s", source, entry->d_name) < 0){
             syslog(LOG_CRIT, "Snprintf: %s",  strerror(errno));
         }
         if(snprintf(dest_path, sizeof(dest_path), "%s/%s", destination, entry->d_name)){
             syslog(LOG_CRIT, "Snprintf: %s",  strerror(errno));
-        }
+        }*/
 
         if (stat(src_path, &statbuf) == -1) {
             syslog(LOG_CRIT,"Stat: %s", strerror(errno));
@@ -181,10 +185,11 @@ void move_directory(const char *source, const char *destination) {
             move_directory(src_path, dest_path);
             continue;
         }
-        syslog(LOG_NOTICE, "Backing up %s to %s\n", src_path, dest_path);
+        syslog(LOG_INFO, "Backing up %s to %s\n", src_path, dest_path);
         if(transact_move_file(src_path, dest_path) != TRANSACT_SUCCESS){
             syslog(LOG_ERR, "Backing up %s to %s FAILED. TRANSACT CANCELLED.\n", src_path, dest_path);
-
+        } else {
+            syslog(LOG_INFO, "Successfully backed up %s to %s\n", src_path, dest_path);
         }
         
     }
@@ -207,7 +212,8 @@ static void __create_timer_abs(struct sigevent * sev, struct itimerspec * its, t
     sev->sigev_notify = SIGEV_SIGNAL;
     sev->sigev_signo = SIGRTMIN;
     sev->sigev_value.sival_ptr = timerid;
-    if (timer_create(CLOCK_BOOTTIME_ALARM, sev, timerid) < 0) {
+    // TODO CHANGE TO CLOCK_BOOTTIME_ALARM 
+    if (timer_create(CLOCK_REALTIME, sev, timerid) < 0) {
         syslog(LOG_ERR, "Could not create timer (). %s", strerror(errno));
         exit(EXIT_FAILURE);
     }

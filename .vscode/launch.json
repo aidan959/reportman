@@ -8,8 +8,8 @@
             "name": "C Compile Launch & Debug ",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/cto_daemon",
-            "args": [],
+            "program": "${workspaceFolder}/bin/reportmand",
+            "args": ["--no-daemon"],
             "stopAtEntry": false,
             // TODO USE "environment": [{ "name": "config", "value": "Debug" }],
             "cwd": "${workspaceFolder}",
@@ -21,11 +21,11 @@
                 },
                 {
                     "description": "Set Disassembly Flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
+                    "text": "-gdb-set disassembly-flavor amd",
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "daemon build file",
+            //"preLaunchTask": "daemon build file",
             "MIMode" : "gdb",
             "miDebuggerPath": "/usr/sbin/gdb",
             "externalConsole": false

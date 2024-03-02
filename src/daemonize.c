@@ -51,5 +51,5 @@ void become_daemon(bool use_flags)
 
 
     // Open log file
-    openlog("cto_daemon", LOG_PID, LOG_DAEMON);
+    openlog("reportmand", LOG_PID, LOG_DAEMON);
 }

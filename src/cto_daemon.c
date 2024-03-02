@@ -35,9 +35,7 @@ int main(int argc, char *argv[])
     time_t queue_interval = 100;
 
     backup_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, queue_time, queue_interval );
-    while(1) {
-        sleep(1);
-    }
+
     bool is_daemon;
     switch (fork())
     {

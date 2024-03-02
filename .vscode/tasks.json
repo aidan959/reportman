@@ -27,7 +27,7 @@
             "type": "shell",
             "label": "daemon build file",
             "command": "make",
-            "args": ["cto_daemon"],
+            "args": [""],
             "problemMatcher": [],
         }
         
