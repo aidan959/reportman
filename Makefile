@@ -5,20 +5,20 @@ SRC=src
 OBJ=obj
 BIN=bin
 
-SRC_TST=src
-OBJ_TST=obj
+SRC_TST=src/tst
+OBJ_TST=obj/tst
 
 MON_T=monitor_tool
 DIR_T=directory_tool
 DAE=daemonize
 MAIN=cto_daemon
-
+MAIN_TST=test
 ifeq ($(PREFIX),)
     PREFIX := /usr/sbin
 endif
 
 
-SOURCES := $(filter-out $(wildcard $(SRC)/tst/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))
+SOURCES := $(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))
 SOURCES_TST := $(wildcard $(SRC_TST)/*)
 
 OBJECTS := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
@@ -49,19 +49,20 @@ install: $(PROG_NAME) | $(PROG_NAME)
 	fi
 	sudo install -m 744 $^ $(PREFIX)/
 
-test: $(TST_OBJECTS)
+$(TST_NAME): $(OBJECTS_TST)
+	@mkdir -p $(@D)
 	$(CC) $^ -o $@
-obj/tst/$(MAIN).o: $(SRC)/$(MAIN).c
+
+$(OBJ_TST)/$(MAIN_TST).o: $(SRC_TST)/$(MAIN_TST).c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@
 
-obj/%.o: $(SRC)/%.c $(SRC)/%.h
+$(OBJ_TST)/%.o: $(SRC_TST)/%.c $(SRC_TST)/%.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@ 
 
 run: | $(PROG_NAME)
 	./bin/$(PROG_NAME)
-
 
 clean:
 	rm -R ./bin ./obj || true
