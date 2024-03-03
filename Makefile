@@ -8,35 +8,49 @@ BIN=bin
 SRC_TST=src/tst
 OBJ_TST=obj/tst
 
-MON_T=monitor_tool
-DIR_T=directory_tool
-DAE=daemonize
-MAIN=cto_daemon
+
+NAME=reportman
+DAEMON=$(NAME)d
+CLIENT=$(NAME)c
+
 MAIN_TST=test
 ifeq ($(PREFIX),)
     PREFIX := /usr/sbin
 endif
 
 
-SOURCES := $(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))
+SOURCES_C := $(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))
+SOURCES_D := $(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))
 SOURCES_TST := $(wildcard $(SRC_TST)/*)
 
-OBJECTS := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
+OBJECTS_C := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
+OBJECTS_D := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
+
 OBJECTS_TST := $(patsubst $(SRC_TST)/%.c, $(OBJ_TST)/%.o, $(SOURCES_TST))
 
-PROG_NAME=$(BIN)/reportmand
+DAEMON_BIN=$(BIN)/$(DAEMON)
+CLIENT_BIN=$(BIN)/$(CLIENT)
+
 TST_NAME=$(BIN)/reportmandtst
 
 
-all: $(PROG_NAME)
+all: $(DAEMON_BIN) $(CLIENT_BIN)
 test: $(TST_NAME)
 
 
-$(PROG_NAME): $(OBJECTS)
+$(DAEMON_BIN): $(OBJECTS)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $@ $(LIBS)
 
-$(OBJ)/$(MAIN).o: $(SRC)/$(MAIN).c
+$(OBJ)/$(DAEMON).o: $(SRC)/$(DAEMON).c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $< -o $@
+
+$(CLIENT_BIN) : $(OBJECTS)
+	@mkdir -p $(@D)
+	$(CC) $^ -o $@ $(LIBS)
+
+$(OBJ)/$(CLIENT).o: $(SRC)/$(CLIENT).c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@
 
@@ -44,7 +58,7 @@ $(OBJ)/%.o: $(SRC)/%.c $(SRC)/%.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@ 
 
-install: $(PROG_NAME) | $(PROG_NAME)
+install: $(DAEMON_BIN) | $(DAEMON_BIN)
 	@if [ "$(shell id -u)" != "0" ]; then\
 		$(warning  This script must be run as root to install to $(PREFIX), and add service to systemctl)echo;\
 	fi
@@ -63,8 +77,8 @@ $(OBJ_TST)/%.o: $(SRC_TST)/%.c $(SRC_TST)/%.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@ 
 
-run: | $(PROG_NAME)
-	./$(PROG_NAME)
+run: | $(DAEMON_BIN)
+	./$(DAEMON_BIN)
 
 runtest: | $(TST_NAME)
 	./$(TST_NAME)

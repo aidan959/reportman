@@ -9,17 +9,15 @@
 #include "backup_tool.h"
 
 #include "monitor_tool.h"
-#include "cto_daemon.h"
+#include "reportmand.h"
+#include "reportman.h"
 
-
-
-void process_args(int argc, char *argv[], execution_arguments_t *args);
 
 int main(int argc, char *argv[])
 {
     execution_arguments_t args = {.make_daemon = true};
 
-    process_args(argc, argv, &args);
+    config_args(argc, argv, &args);
 
     const char *dirs[] = {
         REPORTS_DIRECTORY,
@@ -63,32 +61,15 @@ int main(int argc, char *argv[])
 
     while (is_daemon)
     {
-        syslog(LOG_NOTICE, "cto daemon started");
+        syslog(LOG_NOTICE, "reportmand started.");
         sleep(20);
         break;
     }
 
     // Log termination and close log file
-    syslog(LOG_NOTICE, "cto daemon closed");
+    syslog(LOG_NOTICE, "reportmand exiting");
     closelog();
 
     return EXIT_SUCCESS;
 }
 
-void process_args(int argc, char *argv[], execution_arguments_t *args)
-{
-    int i;
-    for (i = 1; i < argc; i++)
-    {
-
-        if (strcmp(argv[i], "--no-daemon") == 0)
-        {
-            args->make_daemon = false; /* This is used as a boolean value. */
-            continue;
-        }
-        else
-        {
-            /* Process non-optional arguments here. */
-        }
-    }
-}

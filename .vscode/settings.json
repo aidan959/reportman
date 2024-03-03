@@ -19,13 +19,15 @@
         "directory_tool.h": "c",
         "time.h": "c",
         "error_t.h": "c",
-        "cto_daemon.h": "c",
+        "reportmand.h": "c",
         "string_view": "c",
         "errno.h": "c",
         "string.h": "c",
         "sha.h": "c",
         "dirent.h": "c",
-        "backup_tool.h": "c"
+        "backup_tool.h": "c",
+        "monitor_tool.h": "c",
+        "reportman.h": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/sbin/gcc"
 }
