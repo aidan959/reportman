@@ -1,0 +1,12 @@
+[Unit]
+Description=App which monitors and back-ups folders.
+After=network.target
+
+[Service]
+ExecStart=/usr/sbin/reportmand
+Restart=always
+User=reportman
+Group=afnbadmin
+
+[Install]
+WantedBy=multi-user.target

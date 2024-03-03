@@ -27,7 +27,12 @@
         "dirent.h": "c",
         "backup_tool.h": "c",
         "monitor_tool.h": "c",
-        "reportman.h": "c"
+        "reportman.h": "c",
+        "socket.h": "c",
+        "in.h": "c",
+        "executor": "c",
+        "functional": "c",
+        "ratio": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/sbin/gcc"
 }
