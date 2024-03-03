@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <syslog.h>
 #include <stdbool.h>
 #include <time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
 #include "daemonize.h"
 #include "directory_tool.h"
 #include "monitor_tool.h"
@@ -15,9 +18,13 @@ const char DASHBOARD_DIRECTORY[] = "/srv/allfactnobreak/dashboard";
 
 int main(int argc, char *argv[])
 {
-    execution_arguments_t args = {.make_daemon = true};
+    execution_arguments_t exec_args = {.make_daemon = true, .daemon_port = REPORTMAND_BIND_PORT};
 
-    config_args(argc, argv, &args);
+    configure_daemon_args(argc, argv, &exec_args);
+
+    int d_socket;
+    
+    d_acquire_singleton(&d_socket, exec_args.daemon_port);
 
     const char *dirs[] = {
         REPORTS_DIRECTORY,
@@ -25,7 +32,7 @@ int main(int argc, char *argv[])
         DASHBOARD_DIRECTORY
     };
 
-    if (args.make_daemon)
+    if (exec_args.make_daemon)
         become_daemon(0);
 
     init_directories( sizeof(dirs) / sizeof(char *), dirs);
@@ -46,7 +53,7 @@ int main(int argc, char *argv[])
     switch (fork())
     {
     case -1:
-        syslog(LOG_ERR, "Could not create file child process.");
+        syslog(LOG_ERR, "Could not create file monitor child process.");
         break;
     case 0:
         is_daemon = false;
@@ -59,6 +66,9 @@ int main(int argc, char *argv[])
         {
             syslog(LOG_NOTICE, "Path monitor exited successfully (%d).", monitor_exit);
         }
+        while(1) {
+            sleep(1);
+        }   
         return EXIT_SUCCESS;
 
 
@@ -68,11 +78,21 @@ int main(int argc, char *argv[])
         break;
     }
 
-    while (is_daemon)
-    {
-        syslog(LOG_NOTICE, "reportmand started.");
-        sleep(20);
-        break;
+    // Server loop (accepting and handling clients)
+    while (is_daemon) {
+        struct sockaddr_in client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+
+        int client_fd = accept(d_socket, (struct sockaddr *)&client_addr, &client_addr_len);
+        if (client_fd == -1) {
+            perror("Accept failed");
+            continue;
+        }
+
+        // At this point, you can communicate with the client using client_fd
+        // For example, using read() and write() functions
+
+        close(client_fd);  // Close the client socket
     }
 
     // Log termination and close log file

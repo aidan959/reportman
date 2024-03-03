@@ -59,15 +59,19 @@ timer_t transfer_at_time(const char * source_directory, const char * target_dire
     struct itimerspec its;
     timer_t timer_id;
 
-    __back_up_source_directory = source_directory;
-    __back_up_target_directory = target_directory;
+
     void (*handler)(int);
     switch(method) {
     case TRANSFER:
+        __transfer_source_directory = source_directory;
+        __transfer_target_directory = target_directory;
         handler = __transfer_directory;
         break;
     case BACKUP:
+        __back_up_source_directory = source_directory;
+        __back_up_target_directory = target_directory;
         handler = __back_up_directory;
+        
         break;
     default:
     syslog(LOG_ERR,
@@ -301,7 +305,7 @@ static void __back_up_directory(int sigg_no){
 static void __transfer_directory(int sigg_no){
     openlog("reportmand_directory_tool", LOG_PID, LOG_DAEMON);
     switch (sigg_no){
-        case 34:
+        case 35:
             break;
         default:
             syslog(LOG_WARNING, "Timer receieved unexpected signal: %s (%d)", strsignal(sigg_no), sigg_no);

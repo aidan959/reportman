@@ -157,7 +157,7 @@ static int __initialize_signals(void)
         return -1;
     }
 
-    /* Get new FD to read signals from it */
+    // get new file descriptor for signals
     if ((signal_fd = signalfd(-1, &sigmask, 0)) < 0)
     {
         syslog(LOG_ERR,
@@ -178,7 +178,7 @@ int monitor_paths(unsigned int num_paths,
     monitor_t monitor = {};
     if (num_paths < 1)
     {
-        syslog(LOG_WARNING, "At least one directory SHOULD be passed to intotify_create. Defaulting to /srv/test.");
+        syslog(LOG_WARNING, "At least one directory SHOULD be passed to monitor_paths.");
         exit(EXIT_FAILURE);
     }
 

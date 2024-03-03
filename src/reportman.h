@@ -5,12 +5,15 @@
 #define COMMAND_NOT_FOUND 127
 #define COMMAND_SUCCESSFUL 0
 #define COMMAND_ERROR 1
+#define LSOF_FD_NOT_FOUND 2
+#define MAX_CLIENT_QUEUE 5
+
 
 #include <stdbool.h>
 typedef struct
 {
     bool make_daemon;
-    short daemon_port;
+    unsigned short daemon_port;
 } execution_arguments_t;
 typedef struct
 {
@@ -18,9 +21,9 @@ typedef struct
     char * command;
 
 } running_pid_t;
-void config_args(int argc, char *argv[], execution_arguments_t *args);
+void configure_daemon_args(int argc, char *argv[], execution_arguments_t *args);
 int main(int argc, char *argv[]);
-int d_acquire_singleton(int *sockfd, int singleton_port);
+int d_acquire_singleton(int *sockfd, short unsigned singleton_port);
 
 //const char REPORTS_DIRECTORY[] = "/srv/allfactnobreak/reports";
 //const char BACKUP_DIRECTORY[] = "/srv/allfactnobreak/backup";
