@@ -8,7 +8,6 @@ BIN=bin
 SRC_TST=src/tst
 OBJ_TST=obj/tst
 
-
 NAME=reportman
 DAEMON=$(NAME)d
 CLIENT=$(NAME)c
@@ -19,26 +18,29 @@ ifeq ($(PREFIX),)
 endif
 
 
-SOURCES_C := $(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))
-SOURCES_D := $(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))
+SOURCES_C := $(filter-out $(wildcard $(SRC)/$(DAEMON).c),$(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c)))
+SOURCES_D := $(filter-out $(wildcard $(SRC)/$(CLIENT).c),$(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c)))
 SOURCES_TST := $(wildcard $(SRC_TST)/*)
 
-OBJECTS_C := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
-OBJECTS_D := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
-
-OBJECTS_TST := $(patsubst $(SRC_TST)/%.c, $(OBJ_TST)/%.o, $(SOURCES_TST))
 
 DAEMON_BIN=$(BIN)/$(DAEMON)
 CLIENT_BIN=$(BIN)/$(CLIENT)
 
 TST_NAME=$(BIN)/reportmandtst
 
+OBJECTS_C := $(filter-out $(wildcard $(OBJ)/$(DAEMON).o),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_C)))
+OBJECTS_D := $(filter-out $(wildcard $(OBJ)/$(CLIENT).o),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_D)))
+
+OBJECTS_TST := $(patsubst $(SRC_TST)/%.c, $(OBJ_TST)/%.o, $(SOURCES_TST))
+
 
 all: $(DAEMON_BIN) $(CLIENT_BIN)
 test: $(TST_NAME)
 
 
-$(DAEMON_BIN): $(OBJECTS)
+$(DAEMON_BIN): $(OBJECTS_D)
+	@echo $(OBJECTS_C)
+	@echo $(OBJECTS_D)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $@ $(LIBS)
 
@@ -46,7 +48,7 @@ $(OBJ)/$(DAEMON).o: $(SRC)/$(DAEMON).c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@
 
-$(CLIENT_BIN) : $(OBJECTS)
+$(CLIENT_BIN) : $(OBJECTS_C)
 	@mkdir -p $(@D)
 	$(CC) $^ -o $@ $(LIBS)
 

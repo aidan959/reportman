@@ -1,4 +1,5 @@
 #include <stdlib.h>
-int main(void) {
+#include "reportmanc.h"
+int main(int argc, char *argv[]){
 
 }
