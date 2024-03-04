@@ -8,13 +8,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "reportman.h"
-char * __save_pipe_buffer(FILE* fp );
-void __free_running_pids(running_pid_t* pid, unsigned long num_pids);
-running_pid_t * __parse_lsof_line(char* line);
-unsigned long __parse_lsof_output(char* lsof_output, running_pid_t** pids);
-unsigned short __parse_short_arg(char * input);
-int __get_other_pid(unsigned short singleton_port);
 
+unsigned short __parse_short_arg(char * input);
+static int __starts_with(const char *str, const char *prefix);
 void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args)
 {
     int i;
@@ -26,7 +22,7 @@ void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args)
             args->make_daemon = false; 
             continue;
         }
-        else if (strcmp(argv[i], "-p") ||strcmp(argv[i], "--port") == 0)
+        else if (strcmp(argv[i], "-p") == 0 ||strcmp(argv[i], "--port") == 0)
         {
             if (i + 1 >= argc)
             {
@@ -36,7 +32,7 @@ void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args)
             args->daemon_port =__parse_short_arg(argv[++i]); 
             continue;
         }
-         else if (strcmp(argv[i], "-f") ||strcmp(argv[i], "--force") == 0)
+         else if (strcmp(argv[i], "-f") == 0||strcmp(argv[i], "--force") == 0)
         {
             args->force = true; 
         }
@@ -46,14 +42,16 @@ void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args)
         }
     }
 }
-
+  
 void configure_client_args(int argc, char *argv[], client_arguments_t *args)
 {
+    char **command_list = malloc(((size_t)argc -1) * sizeof(char *));
+    int command_count = 0;
     int i;
     for (i = 1; i < argc; i++)
     {
 
-        if (strcmp(argv[i], "-p") ||strcmp(argv[i], "--port") == 0)
+        if (strcmp(argv[i], "-p") == 0  || strcmp(argv[i], "--port") == 0)
         {
             if (i + 1 >= argc)
             {
@@ -61,9 +59,32 @@ void configure_client_args(int argc, char *argv[], client_arguments_t *args)
                 exit(1);
             }
             args->daemon_port =__parse_short_arg(argv[++i]); 
-            continue;
         }
+        else if(__starts_with(argv[i], "-"))
+        {
+            printf("Unrecognized option: %s\n", argv[i]);
+            exit(EXIT_FAILURE);
+        }
+        else
+        {
+            command_list[command_count++] = argv[i];
+        }
+
+
     }
+    args->commands = command_list;
+    args->num_commands = command_count;
+
+}
+static int __starts_with(const char *str, const char *prefix) {
+    if (str == NULL || prefix == NULL) return 0;
+
+    size_t lenstr = strlen(str);
+    size_t lenprefix = strlen(prefix);
+    
+    if (lenprefix > lenstr) return 0;
+
+    return strncmp(str, prefix, lenprefix) == 0;
 }
 unsigned short __parse_short_arg(char * input) {
     char *endptr;
@@ -78,177 +99,35 @@ unsigned short __parse_short_arg(char * input) {
     }
     return (unsigned short)value;
 }
+/// @brief handles and executes a command
+/// @param command 
+/// @param client_id 
+void handle_command(char *command, unsigned long long int client_idk, command_t * response) {
+    // TODO use hash table with function pointers instead
+    parse_command(command, response);
 
-int d_acquire_singleton(int *sockfd, short unsigned singleton_port){
-    struct sockaddr_in addr;
-
-    // Create a socket
-    *sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (*sockfd < 0) {
-        perror("Cannot create socket");
-        return 1;
-    }
-    
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(singleton_port);
-    
-    if (bind(*sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        printf("Bind failed - another instance of reportmand may be running on port(%hu): %s\n", singleton_port,  strerror(errno) );
-        __get_other_pid(singleton_port);
-
-        return BIND_FAILED;
-    }
-    
-    if (listen(*sockfd, 5) < 0) {
-        perror("Listening failed");
-        close(*sockfd);
-        exit(EXIT_FAILURE);
-    }
-    return IS_SINGLETON;
 }
-/// @brief gets the PID if the singleton port is not available.
-/// @param singleton_port 
-/// @return result of the command
-int __get_other_pid(unsigned short singleton_port){
-    FILE *fp;
-    
-    char *lsof_output = NULL;
-    unsigned long num_of_pids = 0;
-
-    // Create the command string
-    char command[50];
-    sprintf(command, "lsof -i :%hu", singleton_port);
-    
-    // Execute the command and open a pipe to read its output
-    fp = popen(command, "r");
-    if (fp == NULL) {
-        perror("Failed to run lsof");
-        return 0;
-    }
-    // make copy of buffer before pipe close
-    lsof_output = __save_pipe_buffer(fp);
-
-    switch(pclose(fp)){
-    case COMMAND_SUCCESSFUL:
-        break;
-    case LSOF_FD_NOT_FOUND:
-        free(lsof_output);
-        // TODO IMPLEMENT RETRY PATTERN IF THIS CASE HAPPENS - WE MAY HAVE GRABBED THE PORT TOO EARLY
-        printf("No processes is using the singleton port %d\n", singleton_port);
-        return -1;
-    case COMMAND_NOT_FOUND:
-        free(lsof_output);
-        printf("lsof was not found by the shell. Please install LSOF to get the process id of conflicting host.");
-        return -2;
-    case COMMAND_ERROR:
-        free(lsof_output);
-        return -1;
-    default:
-        // command wasnt successful - free buffer and return
-        free(lsof_output);
-        return -1;
-    }
-    running_pid_t * running_pids = NULL;
-    num_of_pids = __parse_lsof_output(lsof_output, &running_pids);
-    for (unsigned long i=0;i < num_of_pids; i++) {
-        printf("Process \"%s\" (PID: %d) is using the singleton port %d\n", running_pids[i].command, running_pids[i].pid, singleton_port);
-    }
-    free(lsof_output);
-    __free_running_pids(running_pids, num_of_pids);
-    return 0;
-}
-/// @brief Parses output line of LSOF and
-/// @param lsof_output 
-/// @param pid 
+/// @brief parses command to its representative enum
+/// @param command 
 /// @return 
-unsigned long __parse_lsof_output(char* lsof_output, running_pid_t** pids){
-    char *line;
-    running_pid_t * running_pids;
-    unsigned long capcacity = 0;
-    unsigned long count = 0;
-    char * save_pointer = NULL;
-    line = strtok_r(lsof_output, "\n", &save_pointer);
-    while (line  != NULL) {
-        if (count >= capcacity) {
-            // reduces number of extra assignments
-            capcacity = capcacity == 0 ? 2 : capcacity * 2;
-            running_pid_t * new_running_pids = realloc(running_pids, sizeof(running_pid_t) * capcacity);
-            if (!new_running_pids) {
-                free(running_pids);
-                perror("Failed to malloc to display PIDS.");
-                exit(1);
-            }
-            running_pids = new_running_pids;
-        }
-
-        running_pid_t * pid = __parse_lsof_line(line);
-        if (pid == NULL) {
-            line = strtok_r(NULL, "\n", &save_pointer);
-            continue;
-        }
-        running_pids[count++] = *pid;
-        line = strtok_r(NULL, "\n", &save_pointer);
-
+int parse_command(char *command, command_t * response) {
+    tolower(command);
+    if (strcmp(command, "backup") == 0) {
+        response->command = BACKUP;
+        return COMMAND_SUCCESSFUL;
+    } else if (strcmp(command, "transfer") == 0) {
+        response->command = TRANSFER;
+        return COMMAND_SUCCESSFUL;
+    } else {
+        response->command = UNKNOWN; 
+        return COMMAND_NOT_FOUND;
     }
-    *pids = running_pids;
-    return count;
 }
 
-running_pid_t * __parse_lsof_line(char* line){
-    char type[512], node[512], protocol[512], address[512], state[512];
-    int pid, fd;
-    char device[512], size_off[512];
-    // heap allocate command so it can be returned	
-    char * command = malloc(sizeof(char) * 512);
-    // Example format: "reportmand 1234 user 7u IPv4 7770 0t0 TCP *:http (LISTEN)"
-    int result = sscanf(line, "%s %d %*s %d%s %s %s %s %s %s %s",
-                        command, &pid, &fd, type, device, size_off, node, protocol, address, state);
+void to_lower_case(char *str) {
+    if (str == NULL) return;
 
-    // Check if the line was parsed successfully
-    if (result >= 9) {
-        running_pid_t* running_pid = malloc(sizeof(running_pid));
-        running_pid->pid = pid;
-        running_pid->command = command;
-        return running_pid;
+    for (int i = 0; str[i]; i++) {
+        str[i] = tolower((unsigned char) str[i]);
     }
-    free(command);
-    return NULL;
-}
-
-void __free_running_pids(running_pid_t* pid, unsigned long num_pids){
-    for(unsigned long i = 0; num_pids < i; i++) {
-        free(pid[i].command);
-    }
-    free(pid);
-}
-char * __save_pipe_buffer(FILE* fp ) {
-    char buffer[1024];
-    size_t data_allocated = 0;
-    size_t data_used = 0;
-    char *lsof_output = NULL;
-    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-        size_t bufferLen = strlen(buffer);
-
-        // Ensure there's enough space in the lsof_output buffer
-        if (data_used + bufferLen + 1 > data_allocated) {
-            size_t new_allocated = data_allocated == 0 ? bufferLen * 2 : data_allocated * 2;
-            char *newData = realloc(lsof_output, new_allocated);
-            if (!newData) {
-                perror("Failed to allocate memory");
-                free(lsof_output);
-                pclose(fp);
-                exit(1);
-            }
-            lsof_output = newData;
-            data_allocated = new_allocated;
-        }
-
-        // Append the new lsof_output
-        memcpy(lsof_output + data_used, buffer, bufferLen);
-        data_used += bufferLen;
-        lsof_output[data_used] = '\0';  // Ensure the string is null-terminated
-    }
-    return lsof_output;
 }

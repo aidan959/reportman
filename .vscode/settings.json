@@ -32,7 +32,10 @@
         "in.h": "c",
         "executor": "c",
         "functional": "c",
-        "ratio": "c"
+        "ratio": "c",
+        "array": "c",
+        "initializer_list": "c",
+        "daemonize.h": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/sbin/gcc"
 }
