@@ -8,14 +8,19 @@
 #define COMMAND_ERROR 1
 #define LSOF_FD_NOT_FOUND 2
 #define MAX_CLIENT_QUEUE 5
+#define D_SUCCESS 0
+#define D_INVALID_HH_MM_FORMAT -1
+#define D_INVALID_HH_MM_RANGE -2
+#define D_UNIMPLEMENT -2
 
+#define D_INTERVAL (24 * 60 * 60)
 
 #include <stdbool.h>
 typedef enum {
-    BACKUP,
-    TRANSFER,
-    EXIT,
-    UNKNOWN
+    C_BACKUP,
+    C_TRANSFER,
+    C_EXIT,
+    C_UNKNOWN
 } command_t;
 typedef struct
 {
@@ -39,12 +44,12 @@ typedef struct
 {
     char * response;
     command_t command;
-} command_t;
+} command_response_t;
 
 
 void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args);
 void configure_client_args(int argc, char *argv[], client_arguments_t *args);
-int parse_command(char *command, command_t * response) ;
+int parse_command(char *command, command_response_t * response) ;
 int main(int argc, char *argv[]);
 
 //const char REPORTS_DIRECTORY[] = "/srv/allfactnobreak/reports";

@@ -18,7 +18,16 @@ running_pid_t * __parse_lsof_line(char* line);
 unsigned long __parse_lsof_output(char* lsof_output, running_pid_t** pids);
 int __get_other_pid(unsigned short singleton_port);
 static void __clean_close(int sig);
-static void __handle_command(char *command, unsigned long long int client_idk, command_t * response);
+static void __handle_command(char *command, unsigned long long int client_idk, command_response_t * response);
+;
+static int __schedule_backup(char * hh_mm_str);
+static int __schedule_transfer(char * hh_mm_str);
+
+static int __get_hh_mm_str(char * input_HH_MM,time_t * next_time);
+
+static int __listen_to_clients(void);
+static int __monitor_paths(const char ** dirs);
+
 const char REPORTS_DIRECTORY[] = "/srv/allfactnobreak/reports";
 const char BACKUP_DIRECTORY[] = "/srv/allfactnobreak/backup";
 const char DASHBOARD_DIRECTORY[] = "/srv/allfactnobreak/dashboard";
@@ -53,55 +62,43 @@ int main(int argc, char *argv[])
         become_daemon(0, d_socket);
 
     init_directories(sizeof(dirs) / sizeof(char *), dirs);
-    time_t back_up_time = time(NULL) + 5;
-    time_t transfer_time = time(NULL) + 5;
 
-    time_t queue_interval = 100;
-
-    if (transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, transfer_time, queue_interval, TRANSFER) == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
-    {
-        syslog(LOG_ERR, "Unimplemented transfer method used.");
-    }
-    if (transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, back_up_time, queue_interval, BACKUP) == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
-    {
-        syslog(LOG_ERR, "Unimplemented transfer method used.");
-    }
-    bool is_daemon;
+    bool is_daemon = false;
     switch (fork())
     {
     case -1:
         syslog(LOG_ERR, "Could not create file monitor child process.");
         exit(EXIT_FAILURE);
     case 0:
-        close(d_socket);
-        is_daemon = false;
-        int monitor_exit;
-        if ((monitor_exit = monitor_paths(sizeof(dirs) / sizeof(char *), dirs)) < 0)
-        {
-            syslog(LOG_ERR, "Path monitor exited unsuccessfully with value (%d)", monitor_exit);
-        }
-        else
-        {
-            syslog(LOG_NOTICE, "Path monitor exited successfully (%d).", monitor_exit);
-        }
-
-        return EXIT_SUCCESS;
-
-    default:
-        is_daemon = true;
-
-        break;
+        // blocking -> child that monitors directories
+        exit(__monitor_paths(dirs));
+    default: break;  
     }
-    if (is_daemon)
-        listen_to_clients();
-    // Log termination and close log file
-    syslog(LOG_NOTICE, "reportmand exiting");
+    __schedule_transfer("23:30");
+    __schedule_backup("00:30");
+
+    int exit_code = listen_to_clients();
+
     closelog();
+    syslog(LOG_NOTICE, "reportmand exiting");
 
-    return EXIT_SUCCESS;
+    return exit_code;
 }
-
-int listen_to_clients(void)
+static int __monitor_paths(const char ** dirs)
+{
+    close(d_socket);
+    int monitor_exit= monitor_paths(sizeof(dirs) / sizeof(char *), dirs);
+    if (monitor_exit < 0)
+    {
+        syslog(LOG_ERR, "Path monitor exited unsuccessfully with value (%d)", monitor_exit);
+    }
+    else
+    {
+        syslog(LOG_NOTICE, "Path monitor exited successfully (%d).", monitor_exit);
+    }
+    return monitor_exit;
+}
+static int __listen_to_clients(void)
 {
     char buffer[COMMUNICATION_BUFFER_SIZE];
     // lets give this a huge number before it restarts
@@ -141,6 +138,9 @@ int listen_to_clients(void)
             {
                 buffer[len] = '\0';
                 syslog(LOG_NOTICE, "Received command %s from client %llu\n", buffer,client_id);
+                command_response_t response;
+                __handle_command(buffer, client_id, &response);
+                write(client_fd, response.response, strlen(response.response));
             }  
             else if (len == 0)
             {
@@ -161,14 +161,16 @@ int listen_to_clients(void)
         else
         {
             // no comms made in 10 seconds - lets close prematurely so another client can connect
+            char timeout_msg[] = "Timeout reached. Closing connection.";
+            write(client_fd, timeout_msg, sizeof(timeout_msg));
+
         }
 
-        // At this point, you can communicate with the client using client_fd
-        // For example, using read() and write() functions
 
         close(client_fd); // Close the client socket
         client_id++;
     }
+    return D_SUCCESS;
 }
 
 int d_acquire_singleton(int *sockfd, short unsigned singleton_port){
@@ -344,23 +346,86 @@ char * __save_pipe_buffer(FILE* fp ) {
     }
     return lsof_output;
 }
-static void __handle_command(char *command, unsigned long long int client_idk, command_t * response){
+static void __handle_command(char *command, unsigned long long int client_idk, command_response_t * response){
+    char * response_msg = malloc(COMMUNICATION_BUFFER_SIZE);
+    int no_errors;
     switch(parse_command(command, response)){
-        case BACKUP:
+        case C_BACKUP:
             syslog(LOG_NOTICE, "Client %llu requested a backup.", client_idk);
-            transfer_directory(REPORTS_DIRECTORY, BACKUP_DIRECTORY, BACKUP);
+            no_errors = transfer_directory(REPORTS_DIRECTORY, BACKUP_DIRECTORY, (transfer_method)BACKUP);
+            snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Backup from %s to %s with %d errors. Check log for more details.", REPORTS_DIRECTORY, BACKUP_DIRECTORY, no_errors);
+
             break;
-        case TRANSFER:
+        case C_TRANSFER:
             syslog(LOG_NOTICE, "Client %llu requested a transfer.", client_idk);
-            transfer_directory(DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, TRANSFER);
+            no_errors = transfer_directory(DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, (transfer_method)TRANSFER);
+            snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Transfer from %s to %s with %d errors. Check log for more details.", DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, no_errors);
+            
             break;
-        case UNKNOWN:
+        case C_UNKNOWN:
             syslog(LOG_NOTICE, "Client %llu requested an unknown command.", client_idk);
+            snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Unknown command.");
             break;
         default:
             syslog(LOG_WARNING, "Client %llu requested an unimplemented command (DAEMON MAY HAVE IMPLEMENTATION).", client_idk);
-            break;
+            snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Command not implemented.");
     }
+    response->response = response_msg;
+}
+/// @brief Converts HH:MM string to time_t
+/// @param input_HH_MM 
+/// @param next_time 
+/// @return Success of function
+static int __get_hh_mm_str(char * input_HH_MM,time_t * next_time) {
+    unsigned short target_hour;
+    unsigned short target_minute;
+    if( sscanf(input_HH_MM, "%hu:%hu", &target_hour, &target_minute) != 2) {
+        syslog(LOG_ERR, "Invalid time format: %s, should be HH:MM fromat", input_HH_MM);
+        return(D_INVALID_HH_MM_FORMAT);
+    }
+    if (target_hour > 23 || target_minute > 59) {
+        fprintf(stderr, "Invalid time. Ensure the hour is between 0-23 and minutes are between 0-59.\n");
+        return(D_INVALID_HH_MM_RANGE);
+    }
+
+    time_t now = time(NULL);
+    struct tm *next_target = localtime(&now);
+
+    next_target->tm_min = (int)target_minute;
+    next_target->tm_hour = (int)target_hour;
+    next_target->tm_sec = 0;
+    if (difftime(mktime(next_target), now) < 0) {
+        next_target->tm_mday += 1;
+    }
+    *next_time = mktime(next_target);
+    return(D_SUCCESS);
+}
+static int __schedule_backup(char * hh_mm_str) {
+    time_t back_up_time;
+    int response = __get_hh_mm_str(hh_mm_str, &back_up_time);
+    if (response < 0){
+        return response;
+    }
+
+    if (transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, back_up_time, (time_t)D_INTERVAL, BACKUP) == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
+    {
+        syslog(LOG_ERR, "Unimplemented transfer method used.");
+        return UNIMPLEMENTED_TRANSFER_METHOD;
+    }
+    return D_SUCCESS;
+}
+static int __schedule_transfer(char * hh_mm_str) {
+    time_t transfer_time;
+    int response = __get_hh_mm_str(hh_mm_str, &transfer_time);
+    if (response < 0){
+        return response;
+    }
+    if (transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, transfer_time, D_INTERVAL, TRANSFER) == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
+    {
+        syslog(LOG_ERR, "Unimplemented transfer method used.");
+        return UNIMPLEMENTED_TRANSFER_METHOD;
+    }
+    return D_SUCCESS;
 }
 
 static void __clean_close(int sig)

@@ -186,19 +186,20 @@ void hash_file(unsigned char * sha256_hash, FILE *source){
 /// @param source 
 /// @param destination 
 /// @param method 
-void transfer_directory(const char *source, const char *destination, transfer_method method) {
+/// @return number of files which caused errors
+int transfer_directory(const char *source, const char *destination, transfer_method method) {
     DIR *dir;
     struct dirent *entry;
     struct stat statbuf;
     char src_path[1024];
     char dest_path[1024];
-
+    int no_errors = 0;
     // Create the destination directory
     mkdir(destination, 0777);
 
     if ((dir = opendir(source)) == NULL) {
-        perror("Failed to open directory");
-        return;
+        syslog(LOG_CRIT,"Failed to open directory: %s", strerror(errno));
+        return 1;
     }
 
     while ((entry = readdir(dir)) != NULL) {
@@ -214,15 +215,16 @@ void transfer_directory(const char *source, const char *destination, transfer_me
         }
         
         if (S_ISDIR(statbuf.st_mode)) {
-            transfer_directory(src_path, dest_path, method);
+            no_errors += transfer_directory(src_path, dest_path, method);
             continue;
         }
-        
+        // todo MAKE THIS A FUNCTION / DRY
         switch (method) {
         case BACKUP:
             syslog(LOG_INFO, "Backing up %s to %s\n", src_path, dest_path);
             if(transact_transfer_file(src_path, dest_path, BACKUP) != TRANSACT_SUCCESS){
                 syslog(LOG_ERR, "Backing up %s to %s FAILED. TRANSACT CANCELLED.\n", src_path, dest_path);
+                no_errors += 1;
             } else {
                 syslog(LOG_INFO, "Successfully backed up %s to %s\n", src_path, dest_path);
             }
@@ -231,16 +233,19 @@ void transfer_directory(const char *source, const char *destination, transfer_me
             syslog(LOG_INFO, "Transfering %s to %s\n", src_path, dest_path);
             if(transact_transfer_file(src_path, dest_path, TRANSFER) != TRANSACT_SUCCESS){
                 syslog(LOG_ERR, "Transfering %s to %s FAILED. TRANSACT CANCELLED.\n", src_path, dest_path);
+                no_errors += 1;
             } else {
                 syslog(LOG_INFO, "Successfully transfered %s to %s\n", src_path, dest_path);
             }
             break;
         default:
+            no_errors += 1;
             syslog(LOG_ERR, "Unkown transfer method used.");
         }
         
     }
     closedir(dir);
+    return no_errors;
 }
 
 static void __set_timer_signals(struct sigaction* act, void(*handler)(int), transfer_method method ) {  

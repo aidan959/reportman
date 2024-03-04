@@ -5,12 +5,15 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+#include <ctype.h>
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "reportman.h"
 
 unsigned short __parse_short_arg(char * input);
 static int __starts_with(const char *str, const char *prefix);
+void to_lower_case(char *str);
 void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args)
 {
     int i;
@@ -99,27 +102,20 @@ unsigned short __parse_short_arg(char * input) {
     }
     return (unsigned short)value;
 }
-/// @brief handles and executes a command
-/// @param command 
-/// @param client_id 
-void handle_command(char *command, unsigned long long int client_idk, command_t * response) {
-    // TODO use hash table with function pointers instead
-    parse_command(command, response);
 
-}
 /// @brief parses command to its representative enum
 /// @param command 
 /// @return 
-int parse_command(char *command, command_t * response) {
-    tolower(command);
+int parse_command(char *command, command_response_t * response) {
+    to_lower_case(command);
     if (strcmp(command, "backup") == 0) {
-        response->command = BACKUP;
+        response->command = C_BACKUP;
         return COMMAND_SUCCESSFUL;
     } else if (strcmp(command, "transfer") == 0) {
-        response->command = TRANSFER;
+        response->command = C_TRANSFER;
         return COMMAND_SUCCESSFUL;
     } else {
-        response->command = UNKNOWN; 
+        response->command = C_UNKNOWN; 
         return COMMAND_NOT_FOUND;
     }
 }
@@ -128,6 +124,6 @@ void to_lower_case(char *str) {
     if (str == NULL) return;
 
     for (int i = 0; str[i]; i++) {
-        str[i] = tolower((unsigned char) str[i]);
+        str[i] = (char)tolower((unsigned char) str[i]);
     }
 }

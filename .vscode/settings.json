@@ -35,7 +35,8 @@
         "ratio": "c",
         "array": "c",
         "initializer_list": "c",
-        "daemonize.h": "c"
+        "daemonize.h": "c",
+        "cctype": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/sbin/gcc"
 }
