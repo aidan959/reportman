@@ -13,6 +13,10 @@
 #define D_INVALID_HH_MM_RANGE -2
 #define D_UNIMPLEMENT -2
 
+#define D_DEFAULT_BACKUP_TIME "00:30"
+#define D_DEFAULT_TRANSFER_TIME "23:30"
+
+
 #define D_INTERVAL (24 * 60 * 60)
 
 #include <stdbool.h>
@@ -20,13 +24,17 @@ typedef enum {
     C_BACKUP,
     C_TRANSFER,
     C_EXIT,
-    C_UNKNOWN
+    C_UNKNOWN,
+    C_GETTIMERS
 } command_t;
 typedef struct
 {
     bool make_daemon;
     bool force;
     unsigned short daemon_port;
+    time_t backup_time;
+    time_t transfer_time;
+
 } daemon_arguments_t;
 typedef struct
 {

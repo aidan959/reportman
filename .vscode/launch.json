@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/reportmand",
-            "args": ["--no-daemon"],
+            "args": ["--no-daemon", "-f"],
             "stopAtEntry": false,
             // TODO USE "environment": [{ "name": "config", "value": "Debug" }],
             "cwd": "${workspaceFolder}",
