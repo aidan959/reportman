@@ -5,8 +5,10 @@
 #include <syslog.h>
 #include <stdbool.h>
 #include "daemonize.h"
-// Turns process into daemon.
-void become_daemon(bool use_flags)
+/// @brief 
+/// @param use_flags 
+/// @param singleton_sock_fd 
+void become_daemon(bool use_flags, int singleton_sock_fd)
 {
     switch (fork())
     {
@@ -45,8 +47,11 @@ void become_daemon(bool use_flags)
         if(maxfd == -1)
             maxfd = 8192;
 
-        for(int fd = 0; fd < maxfd; fd++)
+        for(int fd = 0; fd < maxfd; fd++){
+            if(fd == singleton_sock_fd)
+                continue;
             close(fd);
+        }
     }
 
 

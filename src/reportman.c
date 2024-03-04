@@ -15,7 +15,7 @@ unsigned long __parse_lsof_output(char* lsof_output, running_pid_t** pids);
 unsigned short __parse_short_arg(char * input);
 int __get_other_pid(unsigned short singleton_port);
 
-void configure_daemon_args(int argc, char *argv[], execution_arguments_t *args)
+void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args)
 {
     int i;
     for (i = 1; i < argc; i++)
@@ -36,9 +36,32 @@ void configure_daemon_args(int argc, char *argv[], execution_arguments_t *args)
             args->daemon_port =__parse_short_arg(argv[++i]); 
             continue;
         }
+         else if (strcmp(argv[i], "-f") ||strcmp(argv[i], "--force") == 0)
+        {
+            args->force = true; 
+        }
         else
         {
             
+        }
+    }
+}
+
+void configure_client_args(int argc, char *argv[], client_arguments_t *args)
+{
+    int i;
+    for (i = 1; i < argc; i++)
+    {
+
+        if (strcmp(argv[i], "-p") ||strcmp(argv[i], "--port") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                printf("No port specified after %s\n", argv[i]);
+                exit(1);
+            }
+            args->daemon_port =__parse_short_arg(argv[++i]); 
+            continue;
         }
     }
 }
@@ -75,10 +98,10 @@ int d_acquire_singleton(int *sockfd, short unsigned singleton_port){
         printf("Bind failed - another instance of reportmand may be running on port(%hu): %s\n", singleton_port,  strerror(errno) );
         __get_other_pid(singleton_port);
 
-        return 1;
+        return BIND_FAILED;
     }
     
-    if (listen(*sockfd, 5) == -1) {
+    if (listen(*sockfd, 5) < 0) {
         perror("Listening failed");
         close(*sockfd);
         exit(EXIT_FAILURE);
@@ -112,7 +135,8 @@ int __get_other_pid(unsigned short singleton_port){
         break;
     case LSOF_FD_NOT_FOUND:
         free(lsof_output);
-        printf("No process is using the singleton port %d\n", singleton_port);
+        // TODO IMPLEMENT RETRY PATTERN IF THIS CASE HAPPENS - WE MAY HAVE GRABBED THE PORT TOO EARLY
+        printf("No processes is using the singleton port %d\n", singleton_port);
         return -1;
     case COMMAND_NOT_FOUND:
         free(lsof_output);
@@ -128,8 +152,8 @@ int __get_other_pid(unsigned short singleton_port){
     }
     running_pid_t * running_pids = NULL;
     num_of_pids = __parse_lsof_output(lsof_output, &running_pids);
-    for (unsigned long i=0;num_of_pids < i; i++) {
-        printf("%s (PID: %d) is using the singleton port %d\n", running_pids[i].command, running_pids[i].pid, singleton_port);
+    for (unsigned long i=0;i < num_of_pids; i++) {
+        printf("Process \"%s\" (PID: %d) is using the singleton port %d\n", running_pids[i].command, running_pids[i].pid, singleton_port);
     }
     free(lsof_output);
     __free_running_pids(running_pids, num_of_pids);
@@ -144,8 +168,8 @@ unsigned long __parse_lsof_output(char* lsof_output, running_pid_t** pids){
     running_pid_t * running_pids;
     unsigned long capcacity = 0;
     unsigned long count = 0;
-    char ** save_pointer = NULL;
-    line = strtok_r(lsof_output, "\n", save_pointer);
+    char * save_pointer = NULL;
+    line = strtok_r(lsof_output, "\n", &save_pointer);
     while (line  != NULL) {
         if (count >= capcacity) {
             // reduces number of extra assignments
@@ -161,11 +185,11 @@ unsigned long __parse_lsof_output(char* lsof_output, running_pid_t** pids){
 
         running_pid_t * pid = __parse_lsof_line(line);
         if (pid == NULL) {
-            line = strtok_r(NULL, "\n", save_pointer);
+            line = strtok_r(NULL, "\n", &save_pointer);
             continue;
         }
         running_pids[count++] = *pid;
-        line = strtok_r(NULL, "\n", save_pointer);
+        line = strtok_r(NULL, "\n", &save_pointer);
 
     }
     *pids = running_pids;

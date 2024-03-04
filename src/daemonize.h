@@ -13,4 +13,4 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 // Turns process into daemon.
-void become_daemon(bool use_flags);
+void become_daemon(bool use_flags, int singleton_sock_fd);

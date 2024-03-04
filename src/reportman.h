@@ -1,7 +1,8 @@
 #ifndef REPORTMAND_BIND_PORT
-
+#define COMMUNICATION_BUFFER_SIZE 1024
 #define REPORTMAND_BIND_PORT 7770
 #define IS_SINGLETON 0
+#define BIND_FAILED -1
 #define COMMAND_NOT_FOUND 127
 #define COMMAND_SUCCESSFUL 0
 #define COMMAND_ERROR 1
@@ -13,15 +14,22 @@
 typedef struct
 {
     bool make_daemon;
+    bool force;
     unsigned short daemon_port;
-} execution_arguments_t;
+} daemon_arguments_t;
+typedef struct
+{
+    unsigned short daemon_port;
+} client_arguments_t;
 typedef struct
 {
     int pid;
     char * command;
 
 } running_pid_t;
-void configure_daemon_args(int argc, char *argv[], execution_arguments_t *args);
+void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args);
+void configure_client_args(int argc, char *argv[], client_arguments_t *args);
+
 int main(int argc, char *argv[]);
 int d_acquire_singleton(int *sockfd, short unsigned singleton_port);
 
