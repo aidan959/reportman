@@ -7,7 +7,7 @@
 #include "daemonize.h"
 /// @brief 
 /// @param use_flags 
-/// @param singleton_sock_fd 
+/// @param singleton_sock_fd do not close the singleton socket
 void become_daemon(bool use_flags, int singleton_sock_fd)
 {
     switch (fork())
@@ -20,8 +20,8 @@ void become_daemon(bool use_flags, int singleton_sock_fd)
         exit(EXIT_SUCCESS);
     }
 
-    if (setsid() == -1)
-        exit(EXIT_FAILURE); // run in new session without a parent spawn
+    if (setsid() == -1) 
+        exit(EXIT_FAILURE); 
 
     signal(SIGCHLD, SIG_IGN);
     signal(SIGHUP, SIG_IGN);
@@ -38,9 +38,9 @@ void become_daemon(bool use_flags, int singleton_sock_fd)
 
     umask(0);
     
-    // moves to root
+
     chdir("/");
-    if(!(use_flags & D_NO_FILE_CLOSE))  // close all open files
+    if(!(use_flags & D_NO_FILE_CLOSE))  // close all open file descriptors
     {
         long maxfd = sysconf(_SC_OPEN_MAX);
 
@@ -53,7 +53,4 @@ void become_daemon(bool use_flags, int singleton_sock_fd)
             close(fd);
         }
     }
-
-
-
 }

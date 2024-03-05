@@ -11,7 +11,7 @@
 void error(const char *msg, ...) {
     va_list args;
     va_start(args, msg);
-    vprintf(msg, args);  // Correctly forwards the arguments to vprintf
+    vprintf(msg, args); 
     perror("");
     va_end(args);
 
@@ -63,7 +63,6 @@ int main(int argc, char *argv[]) {
              error("ERROR reading from socket");
         printf("%s\n", buffer);
     }
-
 
     close(sockfd);
     return EXIT_SUCCESS;

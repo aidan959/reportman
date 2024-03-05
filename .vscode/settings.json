@@ -37,7 +37,8 @@
         "initializer_list": "c",
         "daemonize.h": "c",
         "cctype": "c",
-        "struct_timespec.h": "c"
+        "struct_timespec.h": "c",
+        "poll.h": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/sbin/gcc",
     "C_Cpp.errorSquiggles": "enabled"

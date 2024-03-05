@@ -24,7 +24,7 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
 static timer_t __schedule_backup(time_t transfer_time);
 static timer_t __schedule_transfer(time_t transfer_time);
 static int __listen_to_clients(void);
-static int __monitor_paths(const char **dirs);
+static int __monitor_paths(const char **dirs, monitor_conf_t monitor_conf);
 static void __kill_pid(int pid);
 static int __force_singleton(int singleton_result, unsigned short port);
 int __is_daemon(void);
@@ -74,24 +74,24 @@ int main(int argc, char *argv[])
 
     switch (singleton_result)
     {
-        case IS_SINGLETON:
-            syslog(LOG_NOTICE, "reportmand started");
-            break;
-        case BIND_FAILED:
+    case IS_SINGLETON:
+        syslog(LOG_NOTICE, "reportmand started");
+        break;
+    case BIND_FAILED:
+        syslog(LOG_ERR, "Could not bind to port %d", exec_args.daemon_port);
+        exit(EXIT_FAILURE);
+    default:
+        if (!exec_args.force) {
             syslog(LOG_ERR, "Could not bind to port %d", exec_args.daemon_port);
             exit(EXIT_FAILURE);
-        default:
-            if (!exec_args.force) {
-                syslog(LOG_ERR, "Could not bind to port %d", exec_args.daemon_port);
-                exit(EXIT_FAILURE);
-            }
-            singleton_result = __force_singleton(singleton_result, exec_args.daemon_port);
+        }
+        singleton_result = __force_singleton(singleton_result, exec_args.daemon_port);
     }
     
     // Open log file
     if (exec_args.make_daemon && !__is_daemon()){
-        openlog("reportmand", LOG_PID, LOG_DAEMON);
         become_daemon(0, d_socket);
+        openlog("reportmand", LOG_PID, LOG_DAEMON);
     }
     else 
         openlog("reportmand", LOG_PID, LOG_USER);
@@ -107,11 +107,24 @@ int main(int argc, char *argv[])
             syslog(LOG_ERR, "Could not create file monitor child process.");
             exit(EXIT_FAILURE);
         case 0:
+        {
+            // saving 24 bytes of stack on daemon thread by scoping :)
+            monitor_conf_t monitor_conf = {
+                .log_file= "",
+                .log_sys_name="",
+                .log_to_file = "",
+                .log_to_sys = "",
+
+            };
             // blocking -> child that monitors directories
-            exit(__monitor_paths(dirs));
+            exit(__monitor_paths(dirs, monitor_conf));
+            
+        }
         default:
             break;
     }
+    openlog("reportmand", LOG_PID, LOG_DAEMON);
+
     transfer_timer = __schedule_transfer(exec_args.transfer_time);
     backup_timer = __schedule_backup(exec_args.backup_time);
     // blocks to go to main loop
@@ -130,10 +143,10 @@ static void __kill_pid(int singleton_result)
         exit(errno);
     }
 }
-static int __monitor_paths(const char **dirs)
+static int __monitor_paths(const char **dirs, monitor_conf_t monitor_conf)
 {
     close(d_socket);
-    int monitor_exit = monitor_paths(sizeof(dirs) / sizeof(char *), dirs);
+    int monitor_exit = monitor_paths(sizeof(dirs) / sizeof(char *), dirs, monitor_conf);
     if (monitor_exit < 0)
     {
         syslog(LOG_ERR, "Path monitor exited unsuccessfully with value (%d)", monitor_exit);
@@ -175,13 +188,14 @@ static int __listen_to_clients(void)
         while ((retval = select(client_fd + 1, &readfds, NULL, NULL, &tv)))
         {
 
-            syslog(LOG_NOTICE, "Client %llu has connected to dameon.", client_id);
+
 
             ssize_t len = read(client_fd, buffer, COMMUNICATION_BUFFER_SIZE - 1);
-            // FD_ISSET(0, &readfds) will be true.
-
             if (len > 0)
             {
+                syslog(LOG_NOTICE, "Client %llu has connected to dameon.", client_id);
+
+                // FD_ISSET(0, &readfds) will be true.
                 buffer[len] = '\0';
                 syslog(LOG_NOTICE, "Received command %s from client %llu\n", buffer, client_id);
                 command_response_t response;
@@ -424,14 +438,14 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
         syslog(LOG_NOTICE, "Client %llu requested a backup.", client_idk);
         no_errors = transfer_directory(REPORTS_DIRECTORY, BACKUP_DIRECTORY, (transfer_method)BACKUP);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Backup from %s to %s with %d errors. Check log for more details.", REPORTS_DIRECTORY, BACKUP_DIRECTORY, no_errors);
-
         break;
+
     case C_TRANSFER:
         syslog(LOG_NOTICE, "Client %llu requested a transfer.", client_idk);
         no_errors = transfer_directory(DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, (transfer_method)TRANSFER);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Transfer from %s to %s with %d errors. Check log for more details.", DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, no_errors);
-
         break;
+
     case C_GETTIMERS:
         syslog(LOG_NOTICE, "Client %llu requested to get timer.", client_idk);
         char backup_time_string[26];
@@ -457,22 +471,23 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
             BACKUP_DIRECTORY,
             backup_time_string
         );
-        
-
-
         break;
+
     case C_CLOSE:
         syslog(LOG_NOTICE, "Client %llu requested to close.", client_idk);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Close accepted. Exit reportmand.");
         __client_request_close = true;
         break;
+
     case C_UNKNOWN:
         syslog(LOG_NOTICE, "Client %llu requested an unknown command.", client_idk);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Unknown command.");
         break;
+
     default:
         syslog(LOG_WARNING, "Client %llu requested an unimplemented command (DAEMON MAY HAVE IMPLEMENTATION).", client_idk);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Command not implemented.");
+
     }
     response->response = response_msg;
 }
@@ -489,7 +504,7 @@ static timer_t __schedule_backup(time_t transfer_time)
 }
 static timer_t __schedule_transfer(time_t transfer_time)
 {
-    transfer_timer = transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, transfer_time, (time_t)D_INTERVAL, BACKUP);
+    transfer_timer = transfer_at_time(DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, transfer_time, (time_t)D_INTERVAL, TRANSFER);
 
     if (transfer_timer == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
     {
@@ -499,11 +514,14 @@ static timer_t __schedule_transfer(time_t transfer_time)
     return transfer_timer;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void __clean_close(int sig)
 {
     close(d_socket);
     exit(0);
 }
+#pragma GCC diagnostic pop
 
 int __force_singleton(int singleton_result, unsigned short port){
     syslog(LOG_WARNING, "Forcing reportmand to start on port %d", port);
@@ -520,7 +538,6 @@ int __force_singleton(int singleton_result, unsigned short port){
     }
     return singleton_result;
 }
-
 
 int __is_daemon(void) {
 

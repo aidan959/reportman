@@ -9,6 +9,15 @@
 #define LSOF_FD_NOT_FOUND 2
 #define MAX_CLIENT_QUEUE 5
 #define D_SUCCESS 0
+
+#define D_INVALID_PATH_FORMAT -1
+#define D_NO_WRITE_TO_LOG_PARENT_DIRECTORY -2
+#define D_PARENT_PATH_NO_EXIST -3
+#define D_COULD_NOT_EXPAND -4
+
+
+#define D_COULD_NOT_CREATE_LOG_FILE -2
+
 #define D_INVALID_HH_MM_FORMAT -1
 #define D_INVALID_HH_MM_RANGE -2
 #define D_UNIMPLEMENT -2
@@ -32,6 +41,10 @@ typedef struct
     bool make_daemon;
     bool force;
     bool close;
+    bool log_to_sys;
+    bool log_to_file;
+    char * monitor_log_file_path;
+    char * monitor_log_sys_name;
     unsigned short daemon_port;
     time_t backup_time;
     time_t transfer_time;

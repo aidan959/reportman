@@ -13,9 +13,19 @@
 
 #include <sys/inotify.h>
 #include "monitor_tool.h"
+#define M_LOG_BUFFER_SIZE 1024
+const char * LOG_PATH = "/var/log/reportmand/monitor.log";
 
-const char * LOG_FOLDER = "/var/log/reportmand/";
-const char * LOG_FILE = "monitor.log";
+static const char * __get_log_message(struct inotify_event *event);
+static void __event_process(struct inotify_event *event, monitor_t *monitor);
+static void __shutdown_inotify(int inotify_fd, monitor_t *monitor);
+static void __shutdown_signals(int signal_fd);
+static int __initialize_signals(void);
+static int __initialize_inotify(unsigned int num_paths, const char **paths, monitor_t *monitor);
+static void __update_monitor_conf(monitor_conf_t * monitor_conf);
+static void __log_event(char * event_file_message, char * event_log_message);
+static bool __remove_new_line(char * str);
+static int __initialize_log_file(void);
 
 unsigned int mon_t_event_mask =
     (IN_ACCESS |        // File was accessed
@@ -31,159 +41,24 @@ unsigned int mon_t_event_mask =
      IN_MOVED_FROM |    // File moved from directory
      IN_MOVED_TO);      // File moved to directory
 
-static void
-__event_process(struct inotify_event *event, monitor_t *monitor)
-{
-    int i;
-    
-    dir_monitored_t *monitors = monitor->monitors;
-    int n_monitors = monitor->no_monitors;
-    // loop all registered monitors to handle the event wd
-    // TODO Use some other data structure which allows querying for the WD
-    for (i = 0; i < n_monitors; ++i)
-    {
+static monitor_conf_t __monitor_conf = {
+    .log_file = "/var/log/reportmand/monitor.log",
+    .log_sys_name = "reportmand_monitor",
+    .log_to_sys = false,
+    .log_to_file = true,
+};
 
-        if (monitors[i].wd != event->wd)
-            continue;
-        // struct stat_t file_stat;
-        // stat();
-        // if(stat_t < 0) {
-            
-        // }
-        if (event->len > 0)
-            syslog(LOG_NOTICE,"Received event in '%s/%s': ",
-                   monitors[i].path,
-                   event->name);
-        else
-            syslog(LOG_NOTICE,"Received event in '%s': ",
-                   monitors[i].path);
+static FILE* __log_file_fd = NULL;
 
-        if (event->mask & IN_ACCESS)
-            syslog(LOG_NOTICE,"\tIN_ACCESS\n");
-        if (event->mask & IN_ATTRIB)
-            syslog(LOG_NOTICE,"\tIN_ATTRIB\n");
-        if (event->mask & IN_OPEN)
-            syslog(LOG_NOTICE,"\tIN_OPEN\n");
-        if (event->mask & IN_CLOSE_WRITE)
-            syslog(LOG_NOTICE,"\tIN_CLOSE_WRITE\n");
-        if (event->mask & IN_CLOSE_NOWRITE)
-            syslog(LOG_NOTICE,"\tIN_CLOSE_NOWRITE\n");
-        if (event->mask & IN_CREATE)
-            syslog(LOG_NOTICE,"\tIN_CREATE\n");
-        if (event->mask & IN_DELETE)
-            syslog(LOG_NOTICE,"\tIN_DELETE\n");
-        if (event->mask & IN_DELETE_SELF)
-            syslog(LOG_NOTICE,"\tIN_DELETE_SELF\n");
-        if (event->mask & IN_MODIFY)
-            syslog(LOG_NOTICE,"\tIN_MODIFY\n");
-        if (event->mask & IN_MOVE_SELF)
-            syslog(LOG_NOTICE,"\tIN_MOVE_SELF\n");
-        if (event->mask & IN_MOVED_FROM)
-            syslog(LOG_NOTICE,"\tIN_MOVED_FROM (cookie: %d)\n",
-                   event->cookie);
-        if (event->mask & IN_MOVED_TO)
-            syslog(LOG_NOTICE,"\tIN_MOVED_TO (cookie: %d)\n",
-                   event->cookie);
-        fflush(stdout);
-        return;
-    }
-}
-
-static void
-__shutdown_inotify(int inotify_fd, monitor_t *monitor)
-{
-    int i;
-    dir_monitored_t *monitors = monitor->monitors;
-    int n_monitors = monitor->no_monitors;
-    for (i = 0; i < n_monitors; ++i)
-    {
-        free(monitors[i].path);
-        inotify_rm_watch(inotify_fd, monitors[i].wd);
-    }
-    free(monitors);
-    close(inotify_fd);
-}
-
-static int
-__initialize_inotify(unsigned int num_paths,
-                     const char **paths, monitor_t *monitor)
-{
-    
-    int inotify_fd;
-
-    // create a notifier
-    if ((inotify_fd = inotify_init()) < 0)
-    {
-        syslog(LOG_ERR, "Couldn't setup new inotify device: '%s'\n",
-               strerror(errno));
-        return -1;
-    }
-
-    // create directory monitors
-    monitor->no_monitors = (int) num_paths;
-    monitor->monitors = malloc(num_paths * sizeof(dir_monitored_t));
-
-    // add monitor for each directory to watch
-    for (unsigned int i = 0; i < num_paths; ++i)
-    {
-        monitor->monitors[i].path = strdup(paths[i]);
-        if ((monitor->monitors[i].wd = inotify_add_watch(inotify_fd,
-                                                         monitor->monitors[i].path,
-                                                         mon_t_event_mask)) < 0)
-        {
-            syslog(LOG_CRIT, "Couldn't add monitor in directory '%s': '%s'\n",
-                   monitor->monitors[i].path,
-                   strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        syslog(LOG_NOTICE, "Started monitoring directory '%s'...\n",
-               monitor->monitors[i].path);
-    }
-
-    return inotify_fd;
-}
-
-static void __shutdown_signals(int signal_fd)
-{
-    close(signal_fd);
-}
-
-static int __initialize_signals(void)
-{
-    int signal_fd;
-    sigset_t sigmask;
-
-    sigemptyset(&sigmask);
-    sigaddset(&sigmask, SIGINT);
-    sigaddset(&sigmask, SIGTERM);
-
-    if (sigprocmask(SIG_BLOCK, &sigmask, NULL) < 0)
-    {
-        syslog(LOG_ERR,
-               "Couldn't block signals: '%s'\n",
-               strerror(errno));
-        return -1;
-    }
-
-    // get new file descriptor for signals
-    if ((signal_fd = signalfd(-1, &sigmask, 0)) < 0)
-    {
-        syslog(LOG_ERR,
-               "Couldn't setup signal FD: '%s'\n",
-               strerror(errno));
-        return -1;
-    }
-
-    return signal_fd;
-}
-
-int monitor_paths(unsigned int num_paths,
-                  const char **dirs)
+int monitor_paths(unsigned int num_paths, const char **dirs, monitor_conf_t monitor_conf)
 {
     int signal_fd;
     int inotify_fd;
     struct pollfd fds[FD_POLL_MAX];
     monitor_t monitor = {};
+    __initialize_log_file();
+    __update_monitor_conf(&monitor_conf);
+
     if (num_paths < 1)
     {
         syslog(LOG_WARNING, "At least one directory SHOULD be passed to monitor_paths.");
@@ -269,10 +144,218 @@ int monitor_paths(unsigned int num_paths,
         }
     }
 
-    // shuts down inotfiy
     __shutdown_inotify(inotify_fd, &monitor);
-    // shutdown signals
+
     __shutdown_signals(signal_fd);
 
     return EXIT_SUCCESS;
+}
+
+static void __event_process(struct inotify_event *event, monitor_t *monitor)
+{
+    int i;
+    dir_monitored_t *monitors = monitor->monitors;
+    int n_monitors = monitor->no_monitors;
+    // loop all registered monitors to handle the event wd
+    // TODO Use some other data structure which allows querying for the WD
+    for (i = 0; i < n_monitors; ++i)
+    {
+        if (monitors[i].wd != event->wd)
+            continue;
+
+        char event_log_message[M_LOG_BUFFER_SIZE];
+        char event_file_message[M_LOG_BUFFER_SIZE];
+
+        if (event->len > 0)
+            // TODO GET USER NAME OF FILE
+            snprintf(event_log_message,M_LOG_BUFFER_SIZE,"Received event in '%s/%s': %s by %s",
+                   monitors[i].path,
+                   event->name,
+                   __get_log_message(event),
+                   "UNIMPLEMENTED"
+                   );
+        else
+                   // TODO GET USER NAME OF FILE
+            snprintf(event_log_message, M_LOG_BUFFER_SIZE,"Received event in '%s/%s': %s by %s",
+                   monitors[i].path,
+                   event->name,
+                   __get_log_message(event),
+                   "UNIMPLEMENTED"
+                   );
+
+        __log_event(event_file_message, event_log_message);
+        return;
+    }
+}
+static const char * __get_log_message(struct inotify_event *event) {
+    if (event->mask & IN_ACCESS)
+        return "IN_ACCESS";
+    if (event->mask & IN_ATTRIB)
+        return "IN_ATTRIB";
+    if (event->mask & IN_OPEN)
+        return "IN_OPEN";
+    if (event->mask & IN_CLOSE_WRITE)
+        return "IN_CLOSE_WRITE";
+    if (event->mask & IN_CLOSE_NOWRITE)
+        return "IN_CLOSE_NOWRITE";
+    if (event->mask & IN_CREATE)
+        return "IN_CREATE";
+    if (event->mask & IN_DELETE)
+        return "IN_DELETE";
+    if (event->mask & IN_DELETE_SELF)
+        return "IN_DELETE_SELF";
+    if (event->mask & IN_MODIFY)
+        return "IN_MODIFY";
+    if (event->mask & IN_MOVE_SELF)
+        return "IN_MOVE_SELF";
+    if (event->mask & IN_MOVED_FROM)
+        return "IN_MOVED_FROM";
+    if (event->mask & IN_MOVED_TO)
+        return "IN_MOVED_TO";
+    return "UNDEFINED";
+}
+static void __shutdown_inotify(int inotify_fd, monitor_t *monitor)
+{
+    int i;
+    dir_monitored_t *monitors = monitor->monitors;
+    int n_monitors = monitor->no_monitors;
+    for (i = 0; i < n_monitors; ++i)
+    {
+        free(monitors[i].path);
+        inotify_rm_watch(inotify_fd, monitors[i].wd);
+    }
+    free(monitors);
+    close(inotify_fd);
+}
+
+static int __initialize_inotify(unsigned int num_paths, const char **paths, monitor_t *monitor)
+{
+    
+    int inotify_fd;
+
+    // create a notifier
+    if ((inotify_fd = inotify_init()) < 0)
+    {
+        syslog(LOG_ERR, "Couldn't setup new inotify device: '%s'\n",
+               strerror(errno));
+        return -1;
+    }
+
+    // create directory monitors
+    monitor->no_monitors = (int) num_paths;
+    monitor->monitors = malloc(num_paths * sizeof(dir_monitored_t));
+
+    // add monitor for each directory to watch
+    for (unsigned int i = 0; i < num_paths; ++i)
+    {
+        monitor->monitors[i].path = strdup(paths[i]);
+        if ((monitor->monitors[i].wd = inotify_add_watch(inotify_fd,
+                                                         monitor->monitors[i].path,
+                                                         mon_t_event_mask)) < 0)
+        {
+            syslog(LOG_CRIT, "Couldn't add monitor in directory '%s': '%s'\n",
+                   monitor->monitors[i].path,
+                   strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        syslog(LOG_NOTICE, "Started monitoring directory '%s'...\n",
+               monitor->monitors[i].path);
+    }
+
+    return inotify_fd;
+}
+
+static void __shutdown_signals(int signal_fd)
+{
+    close(signal_fd);
+}
+
+static int __initialize_signals(void)
+{
+    int signal_fd;
+    sigset_t sigmask;
+
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGINT);
+    sigaddset(&sigmask, SIGTERM);
+
+    if (sigprocmask(SIG_BLOCK, &sigmask, NULL) < 0)
+    {
+        syslog(LOG_ERR,
+               "Couldn't block signals: '%s'\n",
+               strerror(errno));
+        return -1;
+    }
+
+    // get new file descriptor for signals
+    if ((signal_fd = signalfd(-1, &sigmask, 0)) < 0)
+    {
+        syslog(LOG_ERR,
+               "Couldn't setup signal FD: '%s'\n",
+               strerror(errno));
+        return -1;
+    }
+
+    return signal_fd;
+}
+
+static int __initialize_log_file(void) {
+    FILE *file;
+
+    file = fopen(LOG_PATH, "r");
+
+    if (file == NULL) {
+        syslog(LOG_NOTICE, "Log file does not exist, creating... (%s)", __monitor_conf.log_file);
+        file = fopen(__monitor_conf.log_file, "w");
+        if (file == NULL) {
+            syslog(LOG_ERR,"Error creating log file");
+            return M_LOG_FILE_CREATE_ERR;
+        }
+        syslog(LOG_NOTICE, "Log file (%s) created", __monitor_conf.log_file);
+        __log_file_fd = file;
+        return M_LOG_FILE_CREATED;
+    }
+    close(fileno(file));
+    // repon as writable
+    file = fopen(__monitor_conf.log_file, "w");
+    syslog(LOG_NOTICE, "Using existing log file %s", __monitor_conf.log_file);
+    __log_file_fd = file;
+    return M_LOG_FILE_EXISTED;
+}
+
+static void __update_monitor_conf(monitor_conf_t * monitor_conf) {
+    if (monitor_conf->log_file != NULL)
+        __monitor_conf.log_file = monitor_conf->log_file;
+    
+    if (monitor_conf->log_sys_name != NULL)
+        __monitor_conf.log_sys_name = monitor_conf->log_sys_name;
+
+    __monitor_conf.log_to_sys = monitor_conf->log_to_sys;
+    __monitor_conf.log_to_file = monitor_conf->log_to_file;
+}
+
+static void __log_event(char * event_file_message, char * event_log_message) {
+    if (__monitor_conf.log_to_sys)
+        syslog(LOG_NOTICE, event_log_message);
+    if (!__monitor_conf.log_to_file)
+        return;
+    if (__log_file_fd == NULL){
+        syslog(LOG_ERR, "File descriptor for %s is not open", __monitor_conf.log_file);
+    }
+    __remove_new_line(event_log_message);
+    int fprintf_response = fprintf(__log_file_fd, "%s\n",event_file_message);
+    if (fprintf_response < 0){
+        syslog(LOG_ERR, "fprintf out of range: %s", strerror(errno));
+    }  
+}
+
+static bool __remove_new_line(char * str) {
+    size_t len = strcspn(str, "\n");
+
+    if(str[len] == '\n'){
+        str[len] = '\0';
+        return true;
+
+    }
+    return false;
 }

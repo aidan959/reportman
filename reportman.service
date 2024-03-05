@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 ExecStart=/usr/sbin/reportmand
-User=reportman
+User=root
 Group=afnbadmin
 
 [Install]

@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <signal.h>
-
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -24,7 +24,13 @@ typedef struct
     int no_monitors;
 } monitor_t;
 
-
+typedef struct
+{
+    const char * log_file;
+    const char * log_sys_name;
+    bool log_to_sys;
+    bool log_to_file;
+} monitor_conf_t;
 /* Size of buffer to use when reading inotify events */
 #define INOTIFY_BUFFER_SIZE 8192
 
@@ -36,23 +42,15 @@ enum
     FD_POLL_MAX = 2
 };
 
-/* FANotify-like helpers to iterate events */
+
+
 #define IN_EVENT_DATA_LEN (sizeof(struct inotify_event))
-#define IN_EVENT_NEXT(event, length)              \
-    ((length) -= (event)->len,                    \
-     (struct inotify_event *)(((char *)(event)) + \
-                              (event)->len))
-#define IN_EVENT_OK(event, length)                    \
-    ((long)(length) >= (long)IN_EVENT_DATA_LEN &&     \
-     (long)(event)->len >= (long)IN_EVENT_DATA_LEN && \
-     (long)(event)->len <= (long)(length))
+#define IN_EVENT_NEXT(event, length) ((length) -= (event)->len, (struct inotify_event *)(((char *)(event)) +  (event)->len))
+#define IN_EVENT_OK(event, length) ((long)(length) >= (long)IN_EVENT_DATA_LEN && (long)(event)->len >= (long)IN_EVENT_DATA_LEN &&  (long)(event)->len <= (long)(length))
+
+#define M_LOG_FILE_CREATE_ERR -1
+#define M_LOG_FILE_CREATED 2
+#define M_LOG_FILE_EXISTED 1
 
 
-
-
-// static void __event_process(struct inotify_event *event, monitor_t *monitor);
-// static void __shutdown_inotify(int inotify_fd, monitor_t *monitor);
-// static int __initialize_inotify(int num_paths, const char **paths, monitor_t *monitor);
-// static void __shutdown_signals(int signal_fd);
-// static int __initialize_signals(void);
-int monitor_paths(unsigned int num_paths, const char **dirs);
+int monitor_paths(unsigned int num_paths, const char **dirs, monitor_conf_t monitor_conf );

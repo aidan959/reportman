@@ -41,23 +41,30 @@ test: $(TST_NAME)
 
 $(DAEMON_BIN): $(OBJECTS_D)
 	@mkdir -p $(@D)
+	@echo $(CC) $^ -o $@ $(LIBS)
+
 	$(CC) $^ -o $@ $(LIBS)
 
 $(OBJ)/$(DAEMON).o: $(SRC)/$(DAEMON).c
 	@mkdir -p $(@D)
+	@echo $(CC) $(CFLAGS) $< -o $@
 	$(CC) $(CFLAGS) $< -o $@
 
 $(CLIENT_BIN) : $(OBJECTS_C)
 	@mkdir -p $(@D)
+	@echo $(CC) $^ -o $@ $(LIBS)
 	$(CC) $^ -o $@ $(LIBS)
 
 $(OBJ)/$(CLIENT).o: $(SRC)/$(CLIENT).c
 	@mkdir -p $(@D)
+	@echo $(CC) $(CFLAGS) $< -o $@
 	$(CC) $(CFLAGS) $< -o $@
 
 $(OBJ)/%.o: $(SRC)/%.c $(SRC)/%.h
 	@mkdir -p $(@D)
+	@echo $(CC) $(CFLAGS) $< -o $@ 
 	$(CC) $(CFLAGS) $< -o $@ 
+
 SERVICE_NAME = $(NAME).service
 install: $(DAEMON_BIN) | $(CLIENT_BIN)
 	@if [ "$(shell id -u)" != "0" ]; then\
@@ -90,6 +97,9 @@ $(TST_NAME): $(OBJECTS_TST)
 
 $(OBJ_TST)/$(MAIN_TST).o: $(SRC_TST)/$(MAIN_TST).c
 	@mkdir -p $(@D)
+
+
+
 	$(CC) $(CFLAGS) $< -o $@
 
 $(OBJ_TST)/%.o: $(SRC_TST)/%.c $(SRC_TST)/%.h
@@ -104,3 +114,8 @@ runtest: | $(TST_NAME)
 
 clean:
 	rm -R ./bin ./obj || true
+
+
+
+
+
