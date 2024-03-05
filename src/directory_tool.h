@@ -10,7 +10,7 @@ typedef enum  {
 } transfer_method;
 const char * str_transfer_name(transfer_method method);
 
-
+int gettime(timer_t timer_id,struct itimerspec *curr_value);
 int verify_files(FILE *source, FILE * dest);
 int transact_transfer_file(const char *source_path, const char *dest_path, transfer_method method);
 void hash_file(unsigned char * sha256_hash, FILE *source); 

@@ -4,7 +4,6 @@ After=network.target
 
 [Service]
 ExecStart=/usr/sbin/reportmand
-Restart=always
 User=reportman
 Group=afnbadmin
 

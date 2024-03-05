@@ -9,10 +9,14 @@
 #include <poll.h>
 #include <errno.h>
 #include <sys/signalfd.h>
+#include <sys/stat.h>
+
 #include <sys/inotify.h>
 #include "monitor_tool.h"
 
-/* Setup inotify notifications (IN) mask. All these defined in inotify.h. */
+const char * LOG_FOLDER = "/var/log/reportmand/";
+const char * LOG_FILE = "monitor.log";
+
 unsigned int mon_t_event_mask =
     (IN_ACCESS |        // File was accessed
      IN_ATTRIB |        // File's metadata was changed
@@ -31,6 +35,7 @@ static void
 __event_process(struct inotify_event *event, monitor_t *monitor)
 {
     int i;
+    
     dir_monitored_t *monitors = monitor->monitors;
     int n_monitors = monitor->no_monitors;
     // loop all registered monitors to handle the event wd
@@ -40,7 +45,11 @@ __event_process(struct inotify_event *event, monitor_t *monitor)
 
         if (monitors[i].wd != event->wd)
             continue;
-
+        // struct stat_t file_stat;
+        // stat();
+        // if(stat_t < 0) {
+            
+        // }
         if (event->len > 0)
             syslog(LOG_NOTICE,"Received event in '%s/%s': ",
                    monitors[i].path,
@@ -141,7 +150,6 @@ static void __shutdown_signals(int signal_fd)
 
 static int __initialize_signals(void)
 {
-    // TODO: THE DAEMON CODE ALREADY HANDLES THIS
     int signal_fd;
     sigset_t sigmask;
 
@@ -228,8 +236,6 @@ int monitor_paths(unsigned int num_paths,
                 exit(EXIT_FAILURE);
             }
 
-            // Exit if we received interrupt or terminate
-            // TODO SIGINT should not be possible as this will run from daemon
             if (fdsi.ssi_signo == SIGINT ||
                 fdsi.ssi_signo == SIGTERM)
             {

@@ -69,6 +69,10 @@ void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args)
             }
             args->backup_time = backup_time; 
         }
+        else if (strcmp(argv[i], "-c") == 0||strcmp(argv[i], "--close") == 0)
+        {
+            args->close = true; 
+        }
         else
         {
             
@@ -161,6 +165,16 @@ int parse_command(char *command, command_response_t * response) {
     } else if (strcmp(command, "transfer") == 0) {
         response->command = C_TRANSFER;
         return COMMAND_SUCCESSFUL;
+    }
+    else if (strcmp(command, "close") == 0) {
+        response->command = C_CLOSE;
+        return COMMAND_SUCCESSFUL;
+    
+    }
+    else if (strcmp(command, "get_timers") == 0) {
+        response->command = C_GETTIMERS;
+        return COMMAND_SUCCESSFUL;
+    
     } else {
         response->command = C_UNKNOWN; 
         return COMMAND_NOT_FOUND;

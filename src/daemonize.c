@@ -55,6 +55,5 @@ void become_daemon(bool use_flags, int singleton_sock_fd)
     }
 
 
-    // Open log file
-    openlog("reportmand", LOG_PID, LOG_DAEMON);
+
 }

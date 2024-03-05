@@ -9,14 +9,25 @@
 #include <syslog.h>
 #include <stdbool.h>
 #include <signal.h>
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <openssl/sha.h>
 #include <dirent.h>
 #include <time.h>
 #include "directory_tool.h"
+
+static const char * __back_up_source_directory;
+static const char * __back_up_target_directory;
+
+static const char * __transfer_source_directory;
+static const char * __transfer_target_directory;
+
 static int __create_dir_if_not_exist(const char *directory,  unsigned int mode);
+static void __back_up_directory(int sigg_no);
+static void __transfer_directory(int sigg_no);
+static void __set_timer_signals(struct sigaction* act, void(*handler)(int), transfer_method method );
+static void __create_timer_abs(struct sigevent * sev, struct itimerspec * its, timer_t * timerid, time_t time, time_t repeat_interval, transfer_method method);
+static void __start_timer(timer_t timerid, struct itimerspec * its);
 
 const char * str_transfer_name(transfer_method method) {
     switch (method) {
@@ -35,17 +46,7 @@ int init_directories(int num_dirs, const char **dirs)
     }
     return 0;
 }
-static const char * __back_up_source_directory;
-static const char * __back_up_target_directory;
 
-static const char * __transfer_source_directory;
-static const char * __transfer_target_directory;
-
-static void __back_up_directory(int sigg_no);
-static void __transfer_directory(int sigg_no);
-static void __set_timer_signals(struct sigaction* act, void(*handler)(int), transfer_method method );
-static void __create_timer_abs(struct sigevent * sev, struct itimerspec * its, timer_t * timerid, time_t time, time_t repeat_interval, transfer_method method);
-static void __start_timer(timer_t timerid, struct itimerspec * its);
 
 /// @brief Sets a timer with callback to a move function.
 /// @param source_directory 
@@ -67,14 +68,15 @@ timer_t transfer_at_time(const char * source_directory, const char * target_dire
         __transfer_target_directory = target_directory;
         handler = __transfer_directory;
         break;
+
     case BACKUP:
         __back_up_source_directory = source_directory;
         __back_up_target_directory = target_directory;
         handler = __back_up_directory;
-        
         break;
+
     default:
-    syslog(LOG_ERR,
+        syslog(LOG_ERR,
            "Unimplimented mode: %s (%d)", str_transfer_name(method), method);
         return (void *)UNIMPLEMENTED_TRANSFER_METHOD;
     }
@@ -158,8 +160,7 @@ int verify_files(FILE *source, FILE * dest){
         return 0;
     }
 
-    return -1;
-    
+    return -1;    
 
 }
 
@@ -319,4 +320,9 @@ static void __transfer_directory(int sigg_no){
     syslog(LOG_NOTICE, "Transfer of %s to %s executed by timer.", __transfer_source_directory, __transfer_target_directory);
     transfer_directory(__transfer_source_directory, __transfer_target_directory, TRANSFER);
     syslog(LOG_NOTICE, "Transfer of %s to %s completed by timer.", __transfer_source_directory, __transfer_target_directory);
+}
+
+int gettime(timer_t timer_id,
+        struct itimerspec *curr_value){
+    return timer_gettime(timer_id, curr_value);
 }

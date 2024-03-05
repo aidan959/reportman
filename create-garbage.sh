@@ -1,7 +1,7 @@
 mkdir -p sample
 cd sample
-src="/srv/allfactnobreak/reports"
-dst="/srv/allfactnobreak/backup"
+src="/srv/reportman/reports"
+dst="/srv/reportman/backup"
 
 mkdir -p $src
 mkdir -p $dst

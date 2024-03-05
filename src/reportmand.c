@@ -2,16 +2,17 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <stdbool.h>
-#include <time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <sys/select.h>
+#include <time.h>
+
 #include "daemonize.h"
 #include "directory_tool.h"
 #include "monitor_tool.h"
 #include "reportmand.h"
-#include <sys/select.h>
 
 char *__save_pipe_buffer(FILE *fp);
 void __free_running_pids(running_pid_t *pid, unsigned long num_pids);
@@ -20,16 +21,24 @@ unsigned long __parse_lsof_output(char *lsof_output, running_pid_t **pids);
 int __get_other_pid(unsigned short singleton_port);
 static void __clean_close(int sig);
 static void __handle_command(char *command, unsigned long long int client_idk, command_response_t *response);
-;
-static int __schedule_backup(time_t transfer_time);
-static int __schedule_transfer(time_t transfer_time);
-
+static timer_t __schedule_backup(time_t transfer_time);
+static timer_t __schedule_transfer(time_t transfer_time);
 static int __listen_to_clients(void);
 static int __monitor_paths(const char **dirs);
+static void __kill_pid(int pid);
+static int __force_singleton(int singleton_result, unsigned short port);
+int __is_daemon(void);
 
-const char REPORTS_DIRECTORY[] = "/srv/allfactnobreak/reports";
-const char BACKUP_DIRECTORY[] = "/srv/allfactnobreak/backup";
-const char DASHBOARD_DIRECTORY[] = "/srv/allfactnobreak/dashboard";
+
+const char REPORTS_DIRECTORY[] = "/srv/reportman/reports";
+const char BACKUP_DIRECTORY[] = "/srv/reportman/backup";
+const char DASHBOARD_DIRECTORY[] = "/srv/reportman/dashboard";
+
+static timer_t transfer_timer;
+static timer_t backup_timer;
+
+static bool __client_request_close = false;
+
 int d_socket;
 
 int main(int argc, char *argv[])
@@ -40,71 +49,86 @@ int main(int argc, char *argv[])
         .force = false,
         .transfer_time = 0,
         .backup_time = 0,
+        .close = false
     };
     configure_daemon_args(argc, argv, &exec_args);
-
     signal(SIGINT, __clean_close);
     signal(SIGTERM, __clean_close);
 
     const char *dirs[] = {
         REPORTS_DIRECTORY,
         BACKUP_DIRECTORY,
-        DASHBOARD_DIRECTORY
-    };
+        DASHBOARD_DIRECTORY};
     int singleton_result = d_acquire_singleton(&d_socket, exec_args.daemon_port);
+
+    if (exec_args.close){
+        if (singleton_result == IS_SINGLETON) 
+        {
+            printf("No reportman instance is running.\n");
+        } else if (singleton_result > 0 ){
+            __kill_pid(singleton_result);
+            printf("reportmand (%d) closed successfully.\n", singleton_result);
+        }
+        exit(EXIT_SUCCESS);
+    }
+
     switch (singleton_result)
     {
-    case IS_SINGLETON:
-        syslog(LOG_NOTICE, "reportmand started");
-        break;
-    case BIND_FAILED:
-        syslog(LOG_ERR, "Could not bind to port %d", exec_args.daemon_port);
-        exit(EXIT_FAILURE);
-    default:
-        if (!exec_args.force)
-        {
+        case IS_SINGLETON:
+            syslog(LOG_NOTICE, "reportmand started");
+            break;
+        case BIND_FAILED:
             syslog(LOG_ERR, "Could not bind to port %d", exec_args.daemon_port);
             exit(EXIT_FAILURE);
-        }
-        syslog(LOG_WARNING, "Forcing reportmand to start on port %d", exec_args.daemon_port);
-        printf("Forcing reportmand to start on port %d\n", exec_args.daemon_port);
-        if (kill(singleton_result, SIGTERM) < 0)
-        {
-            perror("Error killing other process, use systemctl instead.");
-            exit(errno);
-        }
-        sleep(1);
-        singleton_result = d_acquire_singleton(&d_socket, exec_args.daemon_port);
-        if (singleton_result != IS_SINGLETON){
-            syslog(LOG_ERR, "Could not acquire singleton after force.");
-            exit(EXIT_FAILURE);
-        }
+        default:
+            if (!exec_args.force) {
+                syslog(LOG_ERR, "Could not bind to port %d", exec_args.daemon_port);
+                exit(EXIT_FAILURE);
+            }
+            singleton_result = __force_singleton(singleton_result, exec_args.daemon_port);
     }
-    if (exec_args.make_daemon)
+    
+    // Open log file
+    if (exec_args.make_daemon && !__is_daemon()){
+        openlog("reportmand", LOG_PID, LOG_DAEMON);
         become_daemon(0, d_socket);
+    }
+    else 
+        openlog("reportmand", LOG_PID, LOG_USER);
 
-    init_directories(sizeof(dirs) / sizeof(char *), dirs);
+    if(init_directories(sizeof(dirs) / sizeof(char *), dirs)){
+        syslog(LOG_CRIT, "Failed to initialize directories %s, %s, %s", BACKUP_DIRECTORY, REPORTS_DIRECTORY, DASHBOARD_DIRECTORY);
+        exit(EXIT_FAILURE);
+    };
 
     switch (fork())
     {
-    case -1:
-        syslog(LOG_ERR, "Could not create file monitor child process.");
-        exit(EXIT_FAILURE);
-    case 0:
-        // blocking -> child that monitors directories
-        exit(__monitor_paths(dirs));
-    default:
-        break;
+        case -1:
+            syslog(LOG_ERR, "Could not create file monitor child process.");
+            exit(EXIT_FAILURE);
+        case 0:
+            // blocking -> child that monitors directories
+            exit(__monitor_paths(dirs));
+        default:
+            break;
     }
-    __schedule_transfer(exec_args.transfer_time);
-    __schedule_backup(exec_args.backup_time);
-
+    transfer_timer = __schedule_transfer(exec_args.transfer_time);
+    backup_timer = __schedule_backup(exec_args.backup_time);
+    // blocks to go to main loop
     int exit_code = __listen_to_clients();
 
     closelog();
     syslog(LOG_NOTICE, "reportmand exiting");
 
     return exit_code;
+}
+static void __kill_pid(int singleton_result)
+{
+    if (kill(singleton_result, SIGTERM) < 0)
+    {
+        perror("Error killing other process, use systemctl instead.");
+        exit(errno);
+    }
 }
 static int __monitor_paths(const char **dirs)
 {
@@ -163,10 +187,12 @@ static int __listen_to_clients(void)
                 command_response_t response;
                 __handle_command(buffer, client_id, &response);
                 write(client_fd, response.response, strlen(response.response));
+
             }
             else if (len == 0)
             {
                 syslog(LOG_NOTICE, "Client %llu closed their connection.", client_id);
+                break;
             }
             else if (len < 0)
             {
@@ -185,6 +211,8 @@ static int __listen_to_clients(void)
         }
 
         close(client_fd); // Close the client socket
+        if(__client_request_close)
+            break;
         client_id++;
     }
     return D_SUCCESS;
@@ -387,7 +415,10 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
 {
     char *response_msg = malloc(COMMUNICATION_BUFFER_SIZE);
     int no_errors;
-    switch (parse_command(command, response))
+
+    parse_command(command, response);
+    
+    switch (response->command)
     {
     case C_BACKUP:
         syslog(LOG_NOTICE, "Client %llu requested a backup.", client_idk);
@@ -401,6 +432,40 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Transfer from %s to %s with %d errors. Check log for more details.", DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, no_errors);
 
         break;
+    case C_GETTIMERS:
+        syslog(LOG_NOTICE, "Client %llu requested to get timer.", client_idk);
+        char backup_time_string[26];
+        char transfer_time_string[26];
+
+        struct itimerspec backup_time;
+        struct itimerspec transfer_time; 
+
+        gettime(backup_timer, &backup_time);
+        gettime(transfer_timer, &transfer_time);
+        struct tm * tm_info_backup;
+        tm_info_backup = localtime(&backup_time.it_value.tv_sec);
+        struct tm * tm_info_transfer;
+        tm_info_transfer = localtime(&transfer_time.it_value.tv_sec);
+        strftime(backup_time_string, sizeof(backup_time_string), "%Y-%m-%d %H:%M:%S", tm_info_backup);
+        strftime(transfer_time_string, sizeof(transfer_time_string), "%Y-%m-%d %H:%M:%S", tm_info_transfer);
+        snprintf(response_msg, COMMUNICATION_BUFFER_SIZE,
+            "Next transfer from %s to %s scheduled at %s\nNext backup of %s to %s scheduled at %s",
+            REPORTS_DIRECTORY,
+            DASHBOARD_DIRECTORY,
+            transfer_time_string,
+            DASHBOARD_DIRECTORY,
+            BACKUP_DIRECTORY,
+            backup_time_string
+        );
+        
+
+
+        break;
+    case C_CLOSE:
+        syslog(LOG_NOTICE, "Client %llu requested to close.", client_idk);
+        snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Close accepted. Exit reportmand.");
+        __client_request_close = true;
+        break;
     case C_UNKNOWN:
         syslog(LOG_NOTICE, "Client %llu requested an unknown command.", client_idk);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Unknown command.");
@@ -412,27 +477,62 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
     response->response = response_msg;
 }
 
-static int __schedule_backup(time_t transfer_time)
+static timer_t __schedule_backup(time_t transfer_time)
 {
-    if (transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, transfer_time, (time_t)D_INTERVAL, BACKUP) == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
+    backup_timer = transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, transfer_time, (time_t)D_INTERVAL, BACKUP);
+    if (backup_timer == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
     {
         syslog(LOG_ERR, "Unimplemented transfer method used.");
-        return UNIMPLEMENTED_TRANSFER_METHOD;
+        return (void*)UNIMPLEMENTED_TRANSFER_METHOD;
     }
-    return D_SUCCESS;
+    return backup_timer;
 }
-static int __schedule_transfer(time_t transfer_time)
+static timer_t __schedule_transfer(time_t transfer_time)
 {
-    if (transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, transfer_time, (time_t)D_INTERVAL, TRANSFER) == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
+    transfer_timer = transfer_at_time(REPORTS_DIRECTORY, DASHBOARD_DIRECTORY, transfer_time, (time_t)D_INTERVAL, BACKUP);
+
+    if (transfer_timer == (void *)UNIMPLEMENTED_TRANSFER_METHOD)
     {
         syslog(LOG_ERR, "Unimplemented transfer method used.");
-        return UNIMPLEMENTED_TRANSFER_METHOD;
+        return (void*)UNIMPLEMENTED_TRANSFER_METHOD;
     }
-    return D_SUCCESS;
+    return transfer_timer;
 }
 
 static void __clean_close(int sig)
 {
     close(d_socket);
     exit(0);
+}
+
+int __force_singleton(int singleton_result, unsigned short port){
+    syslog(LOG_WARNING, "Forcing reportmand to start on port %d", port);
+    printf("Forcing reportmand to start on port %d\n", port);
+
+    __kill_pid(singleton_result);
+    sleep(1);
+    singleton_result = d_acquire_singleton(&d_socket, port);
+    if (singleton_result != IS_SINGLETON)
+    {
+        fprintf(stderr,"Could not acquire singleton after force.");
+        
+        exit(EXIT_FAILURE);
+    }
+    return singleton_result;
+}
+
+
+int __is_daemon(void) {
+
+    pid_t pid = getpid();
+
+    pid_t pgid = getpgid(pid);
+
+    pid_t sid = getsid(pid);
+
+    if (pgid == sid) {
+        return 1;
+    } else {
+        return 0;
+    }
 }

@@ -14,8 +14,8 @@ LOG_DIR=/var/log/$(NAME)
 
 MAIN_TST=test
 
-SBIN := /usr/sbin
-USRBIN := /usr/bin
+SBIN = /usr/sbin
+USRBIN = /usr/bin
 
 
 
@@ -58,24 +58,27 @@ $(OBJ)/$(CLIENT).o: $(SRC)/$(CLIENT).c
 $(OBJ)/%.o: $(SRC)/%.c $(SRC)/%.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@ 
-
+SERVICE_NAME = $(NAME).service
 install: $(DAEMON_BIN) | $(CLIENT_BIN)
 	@if [ "$(shell id -u)" != "0" ]; then\
 		$(warning  This script must be run as root to install to $(SBIN), and add service to systemctl)echo;\
 	fi
 	@sudo mkdir -p $(LOG_DIR)
+	@sudo mkdir -p /srv/$(NAME)
+
 	
 	@sudo groupadd afnbadmin || true
 	@sudo useradd $(NAME) -s /sbin/nologin -r -M -d / || true
-	
+	@echo "sudo chown -R $(NAME):afnbadmin /srv/$(NAME)"
 	@sudo chown -R $(NAME):afnbadmin $(LOG_DIR)
+	@sudo chown -R $(NAME):afnbadmin /srv/$(NAME)
+
 	@sudo chmod 640 $(LOG_DIR)
 
-	@sudo install -m 744 $(DAEMON_BIN) $(SBIN)/
-	@sudo setcap 'CAP_WAKE_ALARM' $(SBIN)/$(DAEMON)
-	@sudo install -m 744 $(CLIENT_BIN) $(USRBIN)/
+	install -o $(NAME) -m 744 $(BIN)/$(DAEMON) $(SBIN)
+	install -o $(NAME) -m 745 $(BIN)/$(CLIENT) $(USRBIN)
 
-	@sudo cp $(NAME).service /etc/systemd/system/
+	cp $(NAME).service /etc/systemd/system/
 
 	@sudo systemctl daemon-reload
 	@sudo systemctl enable $(NAME).service

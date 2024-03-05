@@ -23,7 +23,7 @@
 typedef enum {
     C_BACKUP,
     C_TRANSFER,
-    C_EXIT,
+    C_CLOSE,
     C_UNKNOWN,
     C_GETTIMERS
 } command_t;
@@ -31,6 +31,7 @@ typedef struct
 {
     bool make_daemon;
     bool force;
+    bool close;
     unsigned short daemon_port;
     time_t backup_time;
     time_t transfer_time;
@@ -60,7 +61,4 @@ void configure_client_args(int argc, char *argv[], client_arguments_t *args);
 int parse_command(char *command, command_response_t * response) ;
 int main(int argc, char *argv[]);
 
-//const char REPORTS_DIRECTORY[] = "/srv/allfactnobreak/reports";
-//const char BACKUP_DIRECTORY[] = "/srv/allfactnobreak/backup";
-//const char DASHBOARD_DIRECTORY[] = "/srv/allfactnobreak/dashboard";
 #endif
