@@ -15,7 +15,6 @@
 #include <dirent.h>
 #include <time.h>
 #include <ftw.h>
-#include "include/reportman.h"
 #include "include/directory_tool.h"
 
 static const char *__back_up_source_directory;
@@ -31,8 +30,8 @@ static void __lock_backup(void);
 static void __unlock_transfer(void);
 static void __lock_transfer(void);
 static void __transfer_directory(int sigg_no);
-static void __set_timer_signals(struct sigaction *act, void (*handler)(int), transfer_method method);
-static void __create_timer_abs(struct sigevent *sev, struct itimerspec *its, timer_t *timerid, time_t time, time_t repeat_interval, transfer_method method);
+static void __set_timer_signals(struct sigaction *act, void (*handler)(int), transfer_method_t method);
+static void __create_timer_abs(struct sigevent *sev, struct itimerspec *its, timer_t *timerid, time_t time, time_t repeat_interval, transfer_method_t method);
 static void __start_timer(timer_t timerid, struct itimerspec *its);
 static int __backup_unlock_permissions(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf);
 static int __backup_lock_permissions(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf);
@@ -42,7 +41,7 @@ static int __reports_lock_permissions(const char *fpath, const struct stat *sb, 
 static int __reports_unlock_permissions(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf);
 
 
-const char *str_transfer_name(transfer_method method)
+const char *str_transfer_name(transfer_method_t method)
 {
     switch (method)
     {
@@ -72,7 +71,7 @@ int init_directories(int num_dirs, const char **dirs)
 /// @param time Must be an te value. Time in seconds for timer to set off at TODO / maybe change?
 /// @param repeat_interval After first time is reached,
 /// @return
-timer_t transfer_at_time(const char *source_directory, const char *target_directory, time_t time, time_t repeat_interval, transfer_method method)
+timer_t transfer_at_time(const char *source_directory, const char *target_directory, time_t time, time_t repeat_interval, transfer_method_t method)
 {
     struct sigaction act;
     struct sigevent sev;
@@ -123,7 +122,7 @@ timer_t transfer_at_time(const char *source_directory, const char *target_direct
 /// @param dest_path
 /// @param method method of transfer
 /// @return INT determining success
-int transact_transfer_file(const char *source_path, const char *dest_path, transfer_method method)
+int transact_transfer_file(const char *source_path, const char *dest_path, transfer_method_t method)
 {
     FILE *source, *dest;
     char buffer[1024];
@@ -217,7 +216,7 @@ void hash_file(unsigned char *sha256_hash, FILE *source)
 /// @param destination
 /// @param method
 /// @return number of files which caused errors
-int transfer_directory(const char *source, const char *destination, transfer_method method)
+int transfer_directory(const char *source, const char *destination, transfer_method_t method)
 {
     DIR *dir;
     struct dirent *entry;
@@ -292,7 +291,7 @@ int transfer_directory(const char *source, const char *destination, transfer_met
     return no_errors;
 }
 
-static void __set_timer_signals(struct sigaction *act, void (*handler)(int), transfer_method method)
+static void __set_timer_signals(struct sigaction *act, void (*handler)(int), transfer_method_t method)
 {
     // Set up signal handler
     act->sa_flags = SA_SIGINFO;
@@ -306,7 +305,7 @@ static void __set_timer_signals(struct sigaction *act, void (*handler)(int), tra
     }
 }
 
-static void __create_timer_abs(struct sigevent *sev, struct itimerspec *its, timer_t *timerid, time_t time, time_t repeat_interval, transfer_method method)
+static void __create_timer_abs(struct sigevent *sev, struct itimerspec *its, timer_t *timerid, time_t time, time_t repeat_interval, transfer_method_t method)
 {
 
     // Set up timer

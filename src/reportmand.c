@@ -16,9 +16,9 @@
 #include <unistd.h>
 #include <libgen.h>
 
-#include "include/daemonize.h"
+#include "libs/include/daemonize.h"
+#include "libs/include/directory_tool.h"
 #include "include/reportmand.h"
-#include "include/directory_tool.h"
 
 
 static int __wait_for_reportman_fm(void);
@@ -423,13 +423,13 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
     {
     case C_BACKUP:
         syslog(LOG_NOTICE, "Client %llu requested a backup.", client_idk);
-        no_errors = transfer_directory(REPORTS_DIRECTORY, BACKUP_DIRECTORY, (transfer_method)BACKUP);
+        no_errors = transfer_directory(REPORTS_DIRECTORY, BACKUP_DIRECTORY, (transfer_method_t)BACKUP);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Backup from %s to %s with %d errors. Check log for more details.", REPORTS_DIRECTORY, BACKUP_DIRECTORY, no_errors);
         break;
 
     case C_TRANSFER:
         syslog(LOG_NOTICE, "Client %llu requested a transfer.", client_idk);
-        no_errors = transfer_directory(DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, (transfer_method)TRANSFER);
+        no_errors = transfer_directory(DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, (transfer_method_t)TRANSFER);
         snprintf(response_msg, COMMUNICATION_BUFFER_SIZE, "Transfer from %s to %s with %d errors. Check log for more details.", DASHBOARD_DIRECTORY, BACKUP_DIRECTORY, no_errors);
         break;
 

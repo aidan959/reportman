@@ -1,9 +1,9 @@
 #include <errno.h>
 #include <syslog.h>
 #include <linux/limits.h>
-#include "include/reportman.h"
+#include "libs/include/reportman.h"
+#include "libs/include/monitor_tool.h"
 #include "include/reportman_monitor.h"
-#include "include/monitor_tool.h"
 
 static void __configure_monitor_args(int argc, char *argv[], monitor_args_t *args);
 static monitor_args_t __monitor_args;

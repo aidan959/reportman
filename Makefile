@@ -1,14 +1,17 @@
 CC=/usr/sbin/gcc
 CFLAGS=-g -Wextra -Wall -Wfloat-equal -Wundef -Wshadow -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wwrite-strings -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -c
 LIBS=-lcrypto
+
 SRC=src
 INC=include
 OBJ=obj
 BIN=bin
-SRC_TST=src/tst
-OBJ_TST=obj/tst
+
+SRC_LIBS=$(SRC)/libs
+OBJ_LIBS=$(OBJ)/libs
 
 NAME=reportman
+
 DAEMON=$(NAME)d
 CLIENT=$(NAME)c
 MONITOR=$(NAME)_monitor
@@ -20,20 +23,13 @@ EXECUTABLES = $(DAEMON) $(CLIENT) $(MONITOR) $(FM)
 EXECUTABLES_SRC = $(addprefix $(SRC)/,$(addsuffix .c, $(EXECUTABLES)))
 EXECUTABLES_OBJ = $(addprefix $(OBJ)/,$(addsuffix .o, $(EXECUTABLES)))
 
-MAIN_TST=test
-
 SBIN = /usr/sbin
 USRBIN = /usr/bin
 
-
-
-SOURCES_C := $(filter-out $(EXECUTABLES_SRC),$(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))) $(SRC)/$(CLIENT).c
-SOURCES_D := $(filter-out $(EXECUTABLES_SRC),$(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))) $(SRC)/$(DAEMON).c
-SOURCES_MON := $(filter-out $(EXECUTABLES_SRC),$(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))) $(SRC)/$(MONITOR).c
-SOURCES_FM := $(filter-out $(EXECUTABLES_SRC),$(filter-out $(wildcard $(SRC_TST)/*), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c))) $(SRC)/$(FM).c
-
-
-SOURCES_TST := $(wildcard $(SRC_TST)/*)
+SOURCES_C:=$(filter-out $(EXECUTABLES_SRC), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c)) $(SRC)/$(CLIENT).c
+SOURCES_D:=$(filter-out $(EXECUTABLES_SRC), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c)) $(SRC)/$(DAEMON).c
+SOURCES_MON:=$(filter-out $(EXECUTABLES_SRC), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c)) $(SRC)/$(MONITOR).c
+SOURCES_FM:=$(filter-out $(EXECUTABLES_SRC), $(wildcard $(SRC)/*.c) $(wildcard $(SRC)/**/*.c)) $(SRC)/$(FM).c
 
 DAEMON_BIN=$(BIN)/$(DAEMON)
 CLIENT_BIN=$(BIN)/$(CLIENT)
@@ -47,12 +43,7 @@ OBJECTS_D := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, 
 OBJECTS_MON := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_MON))) $(OBJ)/$(MONITOR).o
 OBJECTS_FM := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_FM))) $(OBJ)/$(FM).o
 
-
-OBJECTS_TST := $(patsubst $(SRC_TST)/%.c, $(OBJ_TST)/%.o, $(SOURCES_TST))
-
-
 all: $(DAEMON_BIN) $(CLIENT_BIN) $(MONITOR_BIN) $(FM_BIN)
-test: $(TST_NAME)
 
 # DAEMON MAKE TARGETS
 $(DAEMON_BIN): $(OBJECTS_D)
@@ -92,11 +83,12 @@ $(OBJ)/$(FM).o: $(SRC)/$(FM).c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@
 
-$(OBJ)/%.o: $(SRC)/%.c $(SRC)/$(INC)/%.h
+$(OBJ_LIBS)/%.o: $(SRC_LIBS)/%.c $(SRC_LIBS)/$(INC)/%.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@ 
 
 SERVICE_NAME = $(NAME).service
+
 install: $(DAEMON_BIN) | $(CLIENT_BIN)
 	@if [ "$(shell id -u)" != "0" ]; then\
 		$(warning  This script must be run as root to install to $(SBIN), and add service to systemctl)echo;\
@@ -124,26 +116,8 @@ install: $(DAEMON_BIN) | $(CLIENT_BIN)
 	@sudo systemctl enable $(NAME).service
 
 
-$(TST_NAME): $(OBJECTS_TST)
-	@mkdir -p $(@D)
-	$(CC) $^ -o $@ $(LIBS)
-
-$(OBJ_TST)/$(MAIN_TST).o: $(SRC_TST)/$(MAIN_TST).c
-	@mkdir -p $(@D)
-
-
-
-	$(CC) $(CFLAGS) $< -o $@
-
-$(OBJ_TST)/%.o: $(SRC_TST)/%.c $(SRC_TST)/%.h
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $< -o $@ 
-
 run: | $(DAEMON_BIN)
 	./$(DAEMON_BIN)
-
-runtest: | $(TST_NAME)
-	./$(TST_NAME)
 
 clean:
 	rm -R ./bin ./obj || true

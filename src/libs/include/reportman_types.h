@@ -78,4 +78,4 @@ typedef struct
 typedef enum  {
     BACKUP=BACKUP_MODE,
     TRANSFER=TRANSFER_MODE,
-} transfer_method;
+} transfer_method_t;

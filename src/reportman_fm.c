@@ -9,9 +9,9 @@
 #include <errno.h>
 #include <unistd.h>
 
-#include "include/reportman.h"
+#include "libs/include/reportman.h"
 #include "include/reportman_fm.h"
-#include "include/directory_tool.h"
+#include "libs/include/directory_tool.h"
 
 
 static timer_t __schedule_backup(time_t transfer_time);
