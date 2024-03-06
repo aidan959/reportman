@@ -2,14 +2,25 @@
 #include <time.h>
 #define BACKUP_MODE (unsigned)0
 #define TRANSFER_MODE (unsigned)1
-/* Contains path and  */
+
+
+
+#define R_IPC_COMMAND_FLAG 0xFF000000
+#define R_IPC_COMMAND_NO 0xFF000000
+#define R_IPC_COMMAND_YES 0xFF000001
+#define R_IPC_COMMAND_ACK 0xFF000002
+#define R_IPC_COMMAND_STR 0xFF000002
+
+#define R_IPC_VALUE_UINT_FLAG 0xF0000000
+#define R_IPC_VALUE_UINT_MAX 0xEFFFFFFF
+
 typedef struct
 {
     char *path;
     int wd;
 } dir_monitored_t;
 
-/* Contains path and  */
+
 typedef struct
 {
     dir_monitored_t *monitors;
@@ -43,6 +54,15 @@ typedef enum {
     C_UNKNOWN,
     C_GETTIMERS
 } command_t;
+
+
+typedef enum {
+    IPC_COMMAND_FLAG= R_IPC_COMMAND_FLAG,
+    IPC_COMMAND_NO  = R_IPC_COMMAND_NO,
+    IPC_COMMAND_YES = R_IPC_COMMAND_YES,
+    IPC_COMMAND_ACK = R_IPC_COMMAND_ACK,
+    IPC_COMMAND_STR = R_IPC_COMMAND_STR,
+} IPC_COMMANDS;
 typedef struct
 {
     bool make_daemon;

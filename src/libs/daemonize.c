@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <syslog.h>
 #include <stdbool.h>
+#include <fcntl.h>
 #include "include/daemonize.h"
 /// @brief 
 /// @param use_flags 
@@ -42,12 +43,13 @@ void become_daemon(bool use_flags, int singleton_sock_fd)
     chdir("/");
     if(!(use_flags & D_NO_FILE_CLOSE))  // close all open file descriptors
     {
+        
         long maxfd = sysconf(_SC_OPEN_MAX);
 
         if(maxfd == -1)
             maxfd = 8192;
 
-        for(int fd = 0; fd < maxfd; fd++){
+        for(int fd = 3; fd < maxfd; fd++){
             if(fd == singleton_sock_fd)
                 continue;
             close(fd);

@@ -3,15 +3,20 @@
 #define COMMUNICATION_BUFFER_SIZE 1024
 #define IS_SINGLETON 0
 #define BIND_FAILED -1
+
+
 #define COMMAND_NOT_FOUND 127
 #define COMMAND_SUCCESSFUL 0
 #define COMMAND_ERROR 1
+
 #define LSOF_FD_NOT_FOUND 2
+
 #define MAX_CLIENT_QUEUE 5
+
 #define D_SUCCESS 0
 #define D_FAILURE -1
 #define D_FAILURE_TIMEOUT -2
-
+#define D_MAX_INTERPROCESS_ARGUMENTS 25
 
 #define UNIMPLEMENTED_TRANSFER_METHOD (unsigned)0x11111100
 
@@ -19,21 +24,15 @@
 #define D_NO_WRITE_TO_LOG_PARENT_DIRECTORY -2
 #define D_PARENT_PATH_NO_EXIST -3
 #define D_COULD_NOT_EXPAND -4
-
-
-
 #define D_COULD_NOT_CREATE_LOG_FILE -2
 
 #define D_INVALID_HH_MM_FORMAT -1
 #define D_INVALID_HH_MM_RANGE -2
 #define D_UNIMPLEMENT -2
-
 #define D_DEFAULT_BACKUP_TIME "00:30"
 #define D_DEFAULT_TRANSFER_TIME "23:30"
 
-
 #define D_INTERVAL (24 * 60 * 60)
-
 
 #define R_PARSE_SUCCESS 1
 #define R_PARSE_NO_MATCH 0
@@ -66,10 +65,21 @@ unsigned int __parse_unsigned_int_arg(char * input);
 
 int parse_command(char *command, command_response_t * response) ;
 int main(int argc, char *argv[]);
-int get_hh_mm_str(const char * input_HH_MM,time_t * next_time);
-/// @brief Converts HH:MM string to time_t
-/// @param input_HH_MM 
-/// @param next_time 
-/// @return Success of function
+
+bool ipc_is_command(unsigned int *msg);
+bool ipc_is_ack(unsigned int *msg);
+bool ipc_is_yes(unsigned int *msg);
+bool ipc_is_no(unsigned int *msg);
+bool ipc_is_uint(unsigned int *msg);
+
+int ipc_send_command(unsigned int *msg, command_t command);
+bool ipc_send_uint(int pipe_id, unsigned int value);
+bool ipc_send_ack(int pipe_id);
+
+bool ipc_get_ack(int pipe_id);
+bool ipc_get_ack(int pipe_id);
+unsigned int ipc_get_unit(int pipe_id);
+
+int get_hh_mm_str(const char *input_HH_MM, time_t *next_time);
 
 #endif

@@ -9,8 +9,8 @@
 #include <errno.h>
 #include <unistd.h>
 
-#include "libs/include/reportman.h"
 #include "include/reportman_fm.h"
+#include "libs/include/reportman.h"
 #include "libs/include/directory_tool.h"
 
 
@@ -36,18 +36,14 @@ static reportman_fm_t __fm_conf = {
 int main(int argc, char ** argv){
     __configure_reportman_fm_args(argc, argv, &__fm_conf);
     __started_from_daemon();
-    syslog(LOG_ERR, "%d\n", __fm_conf.daemon_to_fm_read_id);
-    syslog(LOG_ERR, "%d\n", __fm_conf.fm_to_daemon_write_id);
 
     // was not called from daemon
-    if (__fm_conf.do_backup) {
+    if (__fm_conf.do_backup) 
         transfer_directory(R_DASHBOARD_DIRECTORY, R_BACKUP_DIRECTORY, BACKUP);
-    }
-
-    if (__fm_conf.do_transfer) {
+    
+    if (__fm_conf.do_transfer) 
         transfer_directory(R_REPORTS_DIRECTORY, R_DASHBOARD_DIRECTORY, TRANSFER);
-    }
-
+    exit(EXIT_SUCCESS);
 }
 
 /// @brief Runs if executed from daemon
@@ -58,26 +54,49 @@ static int __started_from_daemon(void)
     if(!__fm_conf.from_daemon){
         return 0;
     }
+    if(__fm_conf.daemon_to_fm_read_id < 0 || __fm_conf.fm_to_daemon_write_id < 0) {
+        syslog(LOG_ERR, "Pipes not received from daemon.");
+        fprintf(stderr, "-fd can ONLY be called from a daemon.");
+        return D_FAILURE;
+    }
     __schedule_backup(__fm_conf.backup_time);
     __schedule_transfer(__fm_conf.transfer_time);
 
     __report_to_daemon();
 
+    exit(EXIT_FAILURE);
+
     for(;;) {
         // spin lock and let directory_tool do its thing
         sleep(20);
     }
-    exit(EXIT_FAILURE);
 }
+
 static int __report_to_daemon(void) {
-    if(__fm_conf.daemon_to_fm_read_id < 0 || __fm_conf.fm_to_daemon_write_id < 0) {
-        syslog(LOG_ERR, "Pipes not received from daemon.");
+    fprintf(stderr, "Waiting for ack from daemon.");
+
+    if(ipc_send_ack(__fm_conf.fm_to_daemon_write_id)) {
+        fprintf(stderr, "Successfully got ack from daemon.");
+    }
+    else{
+        syslog(LOG_ERR, "Failed to send ack to daemon.");
         return D_FAILURE;
     }
-    char buffer[COMMUNICATION_BUFFER_SIZE] = "a";
-    write(__fm_conf.fm_to_daemon_write_id, buffer, strlen(buffer));
+    if(ipc_get_ack(__fm_conf.daemon_to_fm_read_id)) {
+        fprintf(stderr, "Successfully got ack from daemon.");
+    }
+    else{
+        syslog(LOG_ERR, "Failed to get ack from daemon.");
+        return D_FAILURE;
+    }
+    // syslog(LOG_DEBUG, "Sending __backup_timer (%p) to parent", __backup_timer);
+    // write(__fm_conf.fm_to_daemon_write_id, __backup_timer, sizeof(__backup_timer));
+    // syslog(LOG_DEBUG, "Sending __transfer_timer (%p) to parent", __transfer_timer);
+
+    // write(__fm_conf.fm_to_daemon_write_id, __transfer_timer, sizeof(__transfer_timer));
     return D_FAILURE;
 } 
+
 /// @brief Schedules a backup at UNIX time transfer_time
 /// @param transfer_time 
 /// @return POSIX timer value
@@ -106,6 +125,7 @@ static timer_t __schedule_transfer(time_t transfer_time)
     }
     return __transfer_timer;
 }
+
 /// @brief 
 /// @param argc passed arguments
 /// @param argv number of arguments
@@ -116,8 +136,6 @@ void __configure_reportman_fm_args(int argc, char *argv[], reportman_fm_t *args)
     {
         char arg_string[COMMUNICATION_BUFFER_SIZE];
         int arg_int[1];
-        
-
         
         if (arg_parse_flag(argv[i], "-fd", "--from-daemon"))
         {
@@ -168,22 +186,21 @@ void __configure_reportman_fm_args(int argc, char *argv[], reportman_fm_t *args)
             fprintf(stderr, "Argument '%s' is not defined", argv[i]);
             exit(EXIT_FAILURE);
         }
+
+    }    
+    if (!args->backup_time) {
+        time_t backup_time;
+        int response = get_hh_mm_str(D_DEFAULT_BACKUP_TIME, &backup_time);
+        if (response < 0)
+            exit(response);
+        args->backup_time = backup_time; 
+    }
+    if (!args->transfer_time){
+        time_t transfer_time;
+        int response = get_hh_mm_str(D_DEFAULT_TRANSFER_TIME, &transfer_time);
+        if (response < 0)
+            exit(response);
         
-        if (!args->backup_time) {
-            time_t backup_time;
-            int response = get_hh_mm_str(D_DEFAULT_BACKUP_TIME, &backup_time);
-            if (response < 0)
-                exit(response);
-            
-            args->backup_time = backup_time; 
-        }
-        if (!args->transfer_time){
-            time_t transfer_time;
-            int response = get_hh_mm_str(D_DEFAULT_TRANSFER_TIME, &transfer_time);
-            if (response < 0)
-                exit(response);
-            
-            args->transfer_time = transfer_time; 
-        }
+        args->transfer_time = transfer_time; 
     }
 }

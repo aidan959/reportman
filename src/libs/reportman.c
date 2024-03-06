@@ -18,6 +18,102 @@ int __parse_signed_int_arg(char * input);
 bool __parse_bool_arg(char * input);
 void to_lower_case(char *str);
 
+bool ipc_is_command(unsigned int *msg){
+    if ((*msg & IPC_COMMAND_FLAG) != IPC_COMMAND_FLAG)
+        return false;
+    return true;
+}
+
+bool ipc_is_ack(unsigned int *msg) {
+    if ((*msg & IPC_COMMAND_ACK) != IPC_COMMAND_ACK)
+        return false;
+    return true;
+}
+
+bool ipc_is_yes(unsigned int *msg) {
+    if ((*msg & IPC_COMMAND_YES) != IPC_COMMAND_YES)
+        return false;
+    return true;
+}
+bool ipc_is_no(unsigned int *msg) {
+    if ((*msg & IPC_COMMAND_NO) != IPC_COMMAND_NO)
+        return false;
+    return true;
+}
+
+bool ipc_is_unint(unsigned int *msg) {
+    if ((*msg & R_IPC_VALUE_UINT_FLAG) != R_IPC_VALUE_UINT_FLAG)
+        return false;
+    return true;
+}
+
+bool ipc_send_yes(int pipe_id) {
+    unsigned int msg[] = {R_IPC_COMMAND_YES};
+    if(write(pipe_id, &msg, sizeof(unsigned int)) == -1) {
+        return false;
+    };
+    return ipc_is_ack(msg);
+}
+bool ipc_send_no(int pipe_id) {
+    unsigned int msg[] = {R_IPC_COMMAND_NO};
+    if(write(pipe_id, &msg, sizeof(unsigned int)) == -1) {
+        return false;
+    };
+    return ipc_is_ack(msg);
+}
+bool ipc_is_uint(unsigned int *msg) {
+    if ((*msg & R_IPC_VALUE_UINT_FLAG) == R_IPC_VALUE_UINT_FLAG)
+        return true;
+    return false;
+}
+bool ipc_send_ack(int pipe_id) {
+    fprintf(stderr,"SENDING ack on %d\n", pipe_id);
+    unsigned int value = R_IPC_COMMAND_ACK;
+    if(write(pipe_id, &value, sizeof(unsigned int)) == -1) {
+        return false;
+    };
+    return true;
+}
+bool ipc_send_uint(int pipe_id, unsigned int value) {
+    if (value > R_IPC_VALUE_UINT_MAX) // max value
+        return false;
+    
+    unsigned int msg[] = {R_IPC_VALUE_UINT_FLAG | value};
+    if(write(pipe_id, &msg, sizeof(unsigned int)) == -1) {
+        return false;
+    };
+    return true;
+}
+unsigned int ipc_get_unit(int pipe_id) {
+    unsigned int *msg;
+    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+        return R_IPC_VALUE_UINT_FLAG;
+
+    if (!ipc_is_unint(msg)) {
+        return R_IPC_VALUE_UINT_FLAG;
+    } 
+    return *msg & ~R_IPC_VALUE_UINT_FLAG;
+}
+bool ipc_get_ack(int pipe_id) {
+    fprintf(stderr,"Getting ack on %d\n", pipe_id);
+    unsigned int *msg;
+    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+        return false;
+    return ipc_is_ack(msg);
+}
+
+bool ipc_get_no(int pipe_id) {
+    unsigned int *msg;
+    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+        return false;
+    return ipc_is_no(msg);
+}
+bool ipc_get_yes(int pipe_id) {
+    unsigned int *msg;
+    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+        return false;
+    return ipc_is_yes(msg);
+}
 
 unsigned short __parse_short_arg(char * input) {
     char *endptr;
@@ -196,7 +292,10 @@ int arg_unrecognised(char * arg) {
     return strncmp(arg, "-", 1) == 0;
 }
 
-
+/// @brief Converts HH:MM string to next time_t of that time
+/// @param input_HH_MM 
+/// @param next_time 
+/// @return Success of function
 int get_hh_mm_str(const char * input_HH_MM,time_t * next_time) {
     unsigned short target_hour;
     unsigned short target_minute;

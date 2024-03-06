@@ -1,5 +1,5 @@
 CC=/usr/sbin/gcc
-CFLAGS=-g -Wextra -Wall -Wfloat-equal -Wundef -Wshadow -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wwrite-strings -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -c
+CFLAGS=-Wextra -Wall -Wfloat-equal -Wundef -Wshadow -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wwrite-strings -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -c
 LIBS=-lcrypto
 
 SRC=src
@@ -36,14 +36,19 @@ CLIENT_BIN=$(BIN)/$(CLIENT)
 MONITOR_BIN=$(BIN)/$(MONITOR)
 FM_BIN=$(BIN)/$(FM)
 
-TST_NAME=$(BIN)/reportmandtst
+EXECUTABLES = $(DAEMON_BIN) $(CLIENT_BIN) $(MONITOR_BIN) $(FM_BIN)
 
 OBJECTS_C := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_C))) $(OBJ)/$(CLIENT).o
 OBJECTS_D := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_D))) $(OBJ)/$(DAEMON).o
 OBJECTS_MON := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_MON))) $(OBJ)/$(MONITOR).o
 OBJECTS_FM := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_FM))) $(OBJ)/$(FM).o
 
-all: $(DAEMON_BIN) $(CLIENT_BIN) $(MONITOR_BIN) $(FM_BIN)
+all: $(EXECUTABLES)
+
+force: clean all
+
+debug: CFLAGS += -g
+debug: force
 
 # DAEMON MAKE TARGETS
 $(DAEMON_BIN): $(OBJECTS_D)

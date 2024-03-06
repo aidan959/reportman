@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
     serv_addr.sin_port = htons(client_args.daemon_port);
 
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) 
-        error("ERROR connecting. reportmand is most likely not running on port %hu.", client_args.daemon_port);
+        error("ERROR connecting. reportmand is most likely not running on port %hu.\n", client_args.daemon_port);
     
     for(int command_i = 0; command_i < client_args.num_commands; command_i++) {
         printf("Sending command: %s\n", client_args.commands[command_i]);
@@ -105,8 +105,6 @@ static void __configure_client_args(int argc, char *argv[], client_arguments_t *
     args->num_commands = command_count;
 
 }
-
-
 
 static int __starts_with(const char *str, const char *prefix) {
     if (str == NULL || prefix == NULL) return 0;
