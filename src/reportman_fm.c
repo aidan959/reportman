@@ -18,7 +18,7 @@ static timer_t __schedule_backup(time_t transfer_time);
 static timer_t __schedule_transfer(time_t transfer_time);
 void __configure_reportman_fm_args(int argc, char *argv[], reportman_fm_t *args);
 static int __started_from_daemon(void);
-
+static int __report_to_daemon(void);
 static timer_t __backup_timer;
 static timer_t __transfer_timer;
 
@@ -36,7 +36,9 @@ static reportman_fm_t __fm_conf = {
 int main(int argc, char ** argv){
     __configure_reportman_fm_args(argc, argv, &__fm_conf);
     __started_from_daemon();
-    
+    syslog(LOG_ERR, "%d\n", __fm_conf.daemon_to_fm_read_id);
+    syslog(LOG_ERR, "%d\n", __fm_conf.fm_to_daemon_write_id);
+
     // was not called from daemon
     if (__fm_conf.do_backup) {
         transfer_directory(R_DASHBOARD_DIRECTORY, R_BACKUP_DIRECTORY, BACKUP);
@@ -48,6 +50,9 @@ int main(int argc, char ** argv){
 
 }
 
+/// @brief Runs if executed from daemon
+/// @param  
+/// @return Discardable
 static int __started_from_daemon(void)
 {
     if(!__fm_conf.from_daemon){
@@ -56,12 +61,26 @@ static int __started_from_daemon(void)
     __schedule_backup(__fm_conf.backup_time);
     __schedule_transfer(__fm_conf.transfer_time);
 
+    __report_to_daemon();
+
     for(;;) {
         // spin lock and let directory_tool do its thing
         sleep(20);
     }
     exit(EXIT_FAILURE);
 }
+static int __report_to_daemon(void) {
+    if(__fm_conf.daemon_to_fm_read_id < 0 || __fm_conf.fm_to_daemon_write_id < 0) {
+        syslog(LOG_ERR, "Pipes not received from daemon.");
+        return D_FAILURE;
+    }
+    char buffer[COMMUNICATION_BUFFER_SIZE] = "a";
+    write(__fm_conf.fm_to_daemon_write_id, buffer, strlen(buffer));
+    return D_FAILURE;
+} 
+/// @brief Schedules a backup at UNIX time transfer_time
+/// @param transfer_time 
+/// @return POSIX timer value
 static timer_t __schedule_backup(time_t transfer_time)
 {
     __backup_timer = transfer_at_time(R_REPORTS_DIRECTORY, R_DASHBOARD_DIRECTORY, transfer_time, (time_t)D_INTERVAL, BACKUP);
@@ -72,6 +91,10 @@ static timer_t __schedule_backup(time_t transfer_time)
     }
     return __backup_timer;
 }
+
+/// @brief Schedules a transfer at UNIX time transfer_time
+/// @param transfer_time 
+/// @return POSIX timer value
 static timer_t __schedule_transfer(time_t transfer_time)
 {
     __transfer_timer = transfer_at_time(R_DASHBOARD_DIRECTORY, R_BACKUP_DIRECTORY, transfer_time, (time_t)D_INTERVAL, TRANSFER);

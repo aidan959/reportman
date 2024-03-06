@@ -546,7 +546,9 @@ static int __wait_for_reportman_fm(void) {
         }
         char buffer[COMMUNICATION_BUFFER_SIZE];
         read(__daemon_to_fm[0], buffer, sizeof(buffer));
+        fprintf(stderr, buffer);
         syslog(LOG_NOTICE, "read from child %s\n", buffer);
+        exit(EXIT_FAILURE);
     }
     return D_FAILURE_TIMEOUT;
 }
@@ -565,7 +567,7 @@ static pid_t __start_reportman_fm(void) {
         syslog(LOG_ERR, "reportman could not spawn filemanager child: %s", strerror(errno));
         exit(EXIT_FAILURE);
     case D_SUCCESS: // is child
-        close(__daemon_to_fm[1]);
+        close(__daemon_to_fm[1]); 
         close(fm_to_daemon[0]);
         // egregiously sized but cleared on execl maybe?
         char daemon_to_fm_read_pipe[COMMUNICATION_BUFFER_SIZE];
@@ -573,7 +575,10 @@ static pid_t __start_reportman_fm(void) {
 
         snprintf(daemon_to_fm_read_pipe, sizeof(daemon_to_fm_read_pipe), "%d", __daemon_to_fm[0]);
         snprintf(fm_to_daemon_write_pipe, sizeof(fm_to_daemon_write_pipe), "%d", fm_to_daemon[1]); 
-
+        fprintf(stderr, "%s %s %s %s %s %s %s", "bin/reportman_fm", "reportman_fm",
+              "--from-daemon",
+              "--d-to-c", daemon_to_fm_read_pipe,
+              "--c-to-d", fm_to_daemon_write_pipe);
         execl("bin/reportman_fm", "reportman_fm",
               "--from-daemon",
               "--d-to-c", daemon_to_fm_read_pipe,
