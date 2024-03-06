@@ -7,7 +7,12 @@
 #include <netdb.h>
 #include <stdarg.h>
 #include <unistd.h>
-#include "reportmanc.h"
+#include "include/reportmanc.h"
+
+static void __configure_client_args(int argc, char *argv[], client_arguments_t *args);
+
+static int __starts_with(const char *str, const char *prefix);
+
 void error(const char *msg, ...) {
     va_list args;
     va_start(args, msg);
@@ -27,7 +32,7 @@ int main(int argc, char *argv[]) {
     char buffer[COMMUNICATION_BUFFER_SIZE];
     client_arguments_t client_args = { .daemon_port = REPORTMAND_BIND_PORT };
 
-    configure_client_args(argc, argv, &client_args);
+    __configure_client_args(argc, argv, &client_args);
 
     if(client_args.num_commands < 1) {
         fprintf(stderr, "No command specified.\n");
@@ -66,4 +71,50 @@ int main(int argc, char *argv[]) {
 
     close(sockfd);
     return EXIT_SUCCESS;
+}
+
+
+static void __configure_client_args(int argc, char *argv[], client_arguments_t *args)
+{
+    char **command_list = malloc(((size_t)argc -1) * sizeof(char *));
+    int command_count = 0;
+    int i;
+    for (i = 1; i < argc; i++)
+    {
+
+        if (strcmp(argv[i], "-p") == 0  || strcmp(argv[i], "--port") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                printf("No port specified after %s\n", argv[i]);
+                exit(1);
+            }
+            args->daemon_port =__parse_short_arg(argv[++i]); 
+        }
+        else if(__starts_with(argv[i], "-"))
+        {
+            printf("Unrecognized option: %s\n", argv[i]);
+            exit(EXIT_FAILURE);
+        }
+        else
+        {
+            command_list[command_count++] = argv[i];
+        }
+    }
+    args->commands = command_list;
+    args->num_commands = command_count;
+
+}
+
+
+
+static int __starts_with(const char *str, const char *prefix) {
+    if (str == NULL || prefix == NULL) return 0;
+
+    size_t lenstr = strlen(str);
+    size_t lenprefix = strlen(prefix);
+    
+    if (lenprefix > lenstr) return 0;
+
+    return strncmp(str, prefix, lenprefix) == 0;
 }

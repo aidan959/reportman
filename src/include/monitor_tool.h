@@ -10,27 +10,7 @@
 #include <errno.h>
 #include <sys/signalfd.h>
 #include <sys/inotify.h>
-/* Contains path and  */
-typedef struct
-{
-    char *path;
-    int wd;
-} dir_monitored_t;
-
-/* Contains path and  */
-typedef struct
-{
-    dir_monitored_t *monitors;
-    int no_monitors;
-} monitor_t;
-
-typedef struct
-{
-    const char * log_file;
-    const char * log_sys_name;
-    bool log_to_sys;
-    bool log_to_file;
-} monitor_conf_t;
+#include "reportman.h"
 /* Size of buffer to use when reading inotify events */
 #define INOTIFY_BUFFER_SIZE 8192
 
@@ -53,4 +33,4 @@ enum
 #define M_LOG_FILE_EXISTED 1
 
 
-int monitor_paths(unsigned int num_paths, const char **dirs, monitor_conf_t monitor_conf );
+int monitor_paths(size_t num_paths, const char* const*dirs, monitor_conf_t monitor_conf );

@@ -12,9 +12,9 @@
 #include <sys/stat.h>
 
 #include <sys/inotify.h>
-#include "monitor_tool.h"
+#include "include/monitor_tool.h"
 #define M_LOG_BUFFER_SIZE 1024
-const char * LOG_PATH = "/var/log/reportmand/monitor.log";
+const char * LOG_PATH = M_LOG_PATH;
 
 static const char * __get_log_message(struct inotify_event *event);
 static void __event_process(struct inotify_event *event, monitor_t *monitor);
@@ -50,7 +50,7 @@ static monitor_conf_t __monitor_conf = {
 
 static FILE* __log_file_fd = NULL;
 
-int monitor_paths(unsigned int num_paths, const char **dirs, monitor_conf_t monitor_conf)
+int monitor_paths(size_t num_paths, const char*const*dirs, monitor_conf_t monitor_conf)
 {
     int signal_fd;
     int inotify_fd;
@@ -61,7 +61,7 @@ int monitor_paths(unsigned int num_paths, const char **dirs, monitor_conf_t moni
 
     if (num_paths < 1)
     {
-        syslog(LOG_WARNING, "At least one directory SHOULD be passed to monitor_paths.");
+        syslog(LOG_ERR, "At least one directory SHOULD be passed to monitor_paths.");
         exit(EXIT_FAILURE);
     }
 
