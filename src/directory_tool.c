@@ -15,7 +15,8 @@
 #include <dirent.h>
 #include <time.h>
 #include <ftw.h>
-#include "directory_tool.h"
+#include "include/reportman.h"
+#include "include/directory_tool.h"
 
 static const char *__back_up_source_directory;
 static const char *__back_up_target_directory;

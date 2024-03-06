@@ -1,16 +1,12 @@
 #define TRANSACT_SUCCESS 0
 #define TRANSACT_ERR_OPEN -1
 #define TRANSACT_HASH_FAILED -2
-#define BACKUP_MODE (unsigned)0
-#define TRANSFER_MODE (unsigned)1
-#define UNIMPLEMENTED_TRANSFER_METHOD (unsigned)0x11111100
+
 #define LOCKED_DIRECTORY_MODE 0440
 #define UNLOCKED_DIRECTORY_MODE 0660
 
-typedef enum  {
-    BACKUP=BACKUP_MODE,
-    TRANSFER=TRANSFER_MODE,
-} transfer_method;
+#include <stdio.h>
+
 const char * str_transfer_name(transfer_method method);
 
 int gettime(timer_t timer_id,struct itimerspec *curr_value);
