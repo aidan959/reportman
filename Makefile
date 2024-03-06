@@ -83,6 +83,7 @@ $(OBJ)/$(FM).o: $(SRC)/$(FM).c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@
 
+# LIBRARY MAKE TARGETS
 $(OBJ_LIBS)/%.o: $(SRC_LIBS)/%.c $(SRC_LIBS)/$(INC)/%.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $< -o $@ 
@@ -115,14 +116,8 @@ install: $(DAEMON_BIN) | $(CLIENT_BIN)
 	@sudo systemctl daemon-reload
 	@sudo systemctl enable $(NAME).service
 
-
 run: | $(DAEMON_BIN)
 	./$(DAEMON_BIN)
 
 clean:
 	rm -R ./bin ./obj || true
-
-
-
-
-
