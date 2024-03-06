@@ -45,10 +45,10 @@
 #define R_BACKUP_DIRECTORY "/srv/reportman/backup"
 #define R_DASHBOARD_DIRECTORY "/srv/reportman/dashboard"
 
-
-
-
 #include <stdbool.h>
+#define false 0
+#define true 1
+
 #include "reportman_types.h"
 
 void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args);

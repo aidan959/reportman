@@ -13,6 +13,7 @@
 
 #include <sys/inotify.h>
 #include "include/monitor_tool.h"
+#include <bits/sigaction.h>
 #define M_LOG_BUFFER_SIZE 1024
 const char * LOG_PATH = M_LOG_PATH;
 
