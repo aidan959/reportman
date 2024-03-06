@@ -29,11 +29,23 @@ static reportman_fm_t __fm_conf = {
     .fm_to_daemon_write_id = -1,
     .backup_time = 0,
     .transfer_time = 0,
-
+    .do_backup = false,
+    .do_transfer = false,
 };
+
 int main(int argc, char ** argv){
     __configure_reportman_fm_args(argc, argv, &__fm_conf);
     __started_from_daemon();
+    
+    // was not called from daemon
+    if (__fm_conf.do_backup) {
+        transfer_directory(R_DASHBOARD_DIRECTORY, R_BACKUP_DIRECTORY, BACKUP);
+    }
+
+    if (__fm_conf.do_transfer) {
+        transfer_directory(R_REPORTS_DIRECTORY, R_DASHBOARD_DIRECTORY, TRANSFER);
+    }
+
 }
 
 static int __started_from_daemon(void)
@@ -45,9 +57,10 @@ static int __started_from_daemon(void)
     __schedule_transfer(__fm_conf.transfer_time);
 
     for(;;) {
+        // spin lock and let directory_tool do its thing
         sleep(20);
     }
-
+    exit(EXIT_FAILURE);
 }
 static timer_t __schedule_backup(time_t transfer_time)
 {
@@ -70,14 +83,18 @@ static timer_t __schedule_transfer(time_t transfer_time)
     }
     return __transfer_timer;
 }
+/// @brief 
+/// @param argc passed arguments
+/// @param argv number of arguments
+/// @param args reportman_fm configuration 
 void __configure_reportman_fm_args(int argc, char *argv[], reportman_fm_t *args) {
     int i;
-
-
     for (i = 1; i < argc; i++)
     {
         char arg_string[COMMUNICATION_BUFFER_SIZE];
         int arg_int[1];
+        
+
         
         if (arg_parse_flag(argv[i], "-fd", "--from-daemon"))
         {
@@ -111,6 +128,16 @@ void __configure_reportman_fm_args(int argc, char *argv[], reportman_fm_t *args)
                 exit(response);
             }
             args->backup_time = backup_time; 
+            continue;
+        }
+        else if (arg_parse_flag(argv[i], "-b", "--backup"))
+        {
+            args->do_backup = true; 
+            continue;
+        }
+        else if (arg_parse_flag(argv[i], "-t", "--transfer"))
+        {
+            args->do_transfer = true; 
             continue;
         }
         else if (arg_unrecognised(argv[i])) {

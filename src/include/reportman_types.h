@@ -29,6 +29,8 @@ typedef struct
 typedef struct
 {
     bool from_daemon;
+    int daemon_to_fm_read_id;
+    int fm_to_daemon_write_id;
     const char * const * dirs;
     size_t no_dirs;
     monitor_conf_t conf;

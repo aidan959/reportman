@@ -113,8 +113,10 @@ install: $(DAEMON_BIN) | $(CLIENT_BIN)
 
 	@sudo chmod 640 $(LOG_DIR)
 
-	install -o $(NAME) -m 744 $(BIN)/$(DAEMON) $(SBIN)
-	install -o $(NAME) -m 745 $(BIN)/$(CLIENT) $(USRBIN)
+	install -o $(NAME) -m 754 $(DAEMON_BIN) $(SBIN)
+	install -o $(NAME) -m 755 $(CLIENT_BIN) $(USRBIN)
+	install -o $(NAME) -m 755 $(MONITOR_BIN) $(USRBIN)
+	install -o $(NAME) -m 755 $(FM_BIN) $(USRBIN)
 
 	cp $(NAME).service /etc/systemd/system/
 

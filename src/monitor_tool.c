@@ -21,7 +21,7 @@ static void __event_process(struct inotify_event *event, monitor_t *monitor);
 static void __shutdown_inotify(int inotify_fd, monitor_t *monitor);
 static void __shutdown_signals(int signal_fd);
 static int __initialize_signals(void);
-static int __initialize_inotify(unsigned int num_paths, const char **paths, monitor_t *monitor);
+static int __initialize_inotify(size_t num_paths, const char *const*paths, monitor_t *monitor);
 static void __update_monitor_conf(monitor_conf_t * monitor_conf);
 static void __log_event(char * event_file_message, char * event_log_message);
 static bool __remove_new_line(char * str);
@@ -228,7 +228,7 @@ static void __shutdown_inotify(int inotify_fd, monitor_t *monitor)
     close(inotify_fd);
 }
 
-static int __initialize_inotify(unsigned int num_paths, const char **paths, monitor_t *monitor)
+static int __initialize_inotify(size_t num_paths, const char *const*paths, monitor_t *monitor)
 {
     
     int inotify_fd;

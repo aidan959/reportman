@@ -114,12 +114,12 @@ void to_lower_case(char *str) {
 
 
 int arg_parse_string(int argc, char *argv[], int *argi, const char * short_name, const char * long_name,const char * value_name, char *output){
-    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name)))
+    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name) == 0))
         return R_PARSE_NO_MATCH;
     
     if (*argi + 1 >= argc)
     {
-        printf("No %s specified with %s\n", value_name, argv[*argi]);
+        fprintf(stderr, "No %s specified with %s\n", value_name, argv[*argi]);
         exit(EXIT_FAILURE);
     }
 
@@ -129,13 +129,13 @@ int arg_parse_string(int argc, char *argv[], int *argi, const char * short_name,
 }
 
 int arg_parse_ushort(int argc, char *argv[], int *argi, const char * short_name, const char * long_name,const char * value_name, unsigned short *output){
-    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name)))
+    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name) == 0))
         return R_PARSE_NO_MATCH;
     
 
     if (*argi + 1 >= argc)
     {
-        printf("No %s specified with %s\n", value_name, argv[*argi]);
+        fprintf(stderr, "No %s specified with %s\n", value_name, argv[*argi]);
         exit(EXIT_FAILURE);
     }
 
@@ -145,17 +145,18 @@ int arg_parse_ushort(int argc, char *argv[], int *argi, const char * short_name,
     
 }
 int arg_parse_flag(char *arg, const char * short_name, const char * long_name){
-    if((strcmp(arg, short_name) == 0 || strcmp(arg, long_name)))
+    if((strcmp(arg, short_name) == 0 || strcmp(arg, long_name) == 0)){
         return R_PARSE_SUCCESS;
-    else
-        return R_PARSE_NO_MATCH;
+    }
+
+    return R_PARSE_NO_MATCH;
 }
 int arg_parse_uint(int argc, char *argv[], int *argi, const char * short_name, const char * long_name,const char * value_name, unsigned int *output) {
-    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name)))
+    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name) == 0))
         return R_PARSE_NO_MATCH;
     if (*argi + 1 >= argc)
     {
-        printf("No %s specified with %s\n", value_name, argv[*argi]);
+        fprintf(stderr, "No %s specified with %s\n", value_name, argv[*argi]);
         exit(EXIT_FAILURE);
     }
 
@@ -165,11 +166,11 @@ int arg_parse_uint(int argc, char *argv[], int *argi, const char * short_name, c
 }
 
 int arg_parse_int(int argc, char *argv[], int *argi, const char * short_name, const char * long_name,const char * value_name, int *output) {
-    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name)))
+    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name) == 0))
         return R_PARSE_NO_MATCH;
     if (*argi + 1 >= argc)
     {
-        printf("No %s specified with %s\n", value_name, argv[*argi]);
+        fprintf(stderr, "No %s specified with %s\n", value_name, argv[*argi]);
         exit(EXIT_FAILURE);
     }
 
@@ -179,11 +180,11 @@ int arg_parse_int(int argc, char *argv[], int *argi, const char * short_name, co
 }
 
 int arg_parse_bool(int argc, char *argv[], int *argi, const char * short_name, const char * long_name,const char * value_name, bool *output) {
-    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name)))
+    if(!(strcmp(argv[*argi], short_name) == 0 || strcmp(argv[*argi], long_name) == 0))
         return R_PARSE_NO_MATCH;
     if (*argi + 1 >= argc)
     {
-        printf("No %s specified with %s\n", value_name, argv[*argi]);
+        fprintf(stderr, "No %s specified with %s\n", value_name, argv[*argi]);
         exit(EXIT_FAILURE);
     }
 

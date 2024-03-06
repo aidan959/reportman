@@ -15,10 +15,13 @@ int main(int argc, char * argv[]) {
         R_DASHBOARD_DIRECTORY,
         R_REPORTS_DIRECTORY
     };
+
     monitor_args_t monitor_args = {
         .from_daemon = false,
         .dirs = dirs,
         .no_dirs = 3,
+        .daemon_to_fm_read_id = -1,
+        .fm_to_daemon_write_id = -1,
         .conf = {
             .log_file = M_LOG_PATH,
             .log_sys_name = "reportman_monitor",
@@ -55,6 +58,7 @@ static void __configure_monitor_args(int argc, char *argv[], monitor_args_t *arg
     for (i = 1; i < argc; i++)
     {
         char arg_string[COMMUNICATION_BUFFER_SIZE];
+        int arg_int[1];
 
         bool arg_bool[1];
         if(arg_parse_flag(argv[i], "-fd", "--from-daemon")){
@@ -62,6 +66,14 @@ static void __configure_monitor_args(int argc, char *argv[], monitor_args_t *arg
             continue;
 
         } 
+        else if(arg_parse_int(argc, argv, &i, "--d-to-c", "--d-to-c", "daemon to fm read pipe id", arg_int)) {
+            args->daemon_to_fm_read_id = *arg_int;
+            continue;
+        }
+        else if(arg_parse_int(argc, argv, &i, "--c-to-d", "--c-to-d", "fm to daemon write pipe id", arg_int)) {
+            args->fm_to_daemon_write_id = *arg_int;
+            continue;
+        }
         else if(arg_parse_string(argc,argv, &i, "-lf", "--log-file", "log file path", arg_string)) {
             char* log_file = malloc(sizeof(char) * PATH_MAX);
             strcpy(log_file, arg_string);

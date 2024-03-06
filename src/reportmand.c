@@ -1,5 +1,5 @@
 #define _POSIX_C_SOURCE 199309L // for POSIX timers
-
+#define _XOPEN_SOURCE 600
 #include <stdio.h>
 
 #include <stdlib.h>
@@ -71,16 +71,18 @@ int main(int argc, char *argv[])
         .monitor_log_file_path = M_LOG_PATH,
         .monitor_log_sys_name = "reportman_monitor"
     };
+
     __configure_daemon_args(argc, argv, &exec_args);
+
     signal(SIGINT, __clean_close);
     signal(SIGTERM, __clean_close);
 
     const char *dirs[] = {
         REPORTS_DIRECTORY,
         BACKUP_DIRECTORY,
-        DASHBOARD_DIRECTORY};
+        DASHBOARD_DIRECTORY
+    };
     int singleton_result = d_acquire_singleton(&d_socket, exec_args.daemon_port);
-
     if (exec_args.close){
         if (singleton_result == IS_SINGLETON) 
         {
@@ -124,10 +126,6 @@ int main(int argc, char *argv[])
 
     pid_t reportman_monitor_pid = __start_reportman_monitor();
     pid_t reportman_fd_pid = __start_reportman_fm();
-    openlog("reportmand", LOG_PID, LOG_DAEMON);
-    
-    // __transfer_timer = __schedule_transfer(exec_args.transfer_time);
-    // __backup_timer = __schedule_backup(exec_args.backup_time);
     
     syslog(LOG_DEBUG, "reportman_fd running as child %d", reportman_fd_pid);
     syslog(LOG_DEBUG, "reportman_monitor running as child %d", reportman_monitor_pid);
@@ -179,9 +177,6 @@ static int __listen_to_clients(void)
         int retval;
         while ((retval = select(client_fd + 1, &readfds, NULL, NULL, &tv)))
         {
-
-
-
             ssize_t len = read(client_fd, buffer, COMMUNICATION_BUFFER_SIZE - 1);
             if (len > 0)
             {
@@ -526,6 +521,8 @@ static int __is_daemon(void) {
     }
 }
 
+/// @brief Waits for reportman_fm to send timer data
+/// @return returns success of function
 static int __wait_for_reportman_fm(void) {
     struct timeval timeout;
     fd_set set;
@@ -533,18 +530,18 @@ static int __wait_for_reportman_fm(void) {
     FD_ZERO(&set);
     FD_SET(__daemon_to_fm[0], &set);
 
-
-    timeout.tv_sec = 10;  
+    time_t timeout_secs = 10;
+    timeout.tv_sec = timeout_secs;  
     timeout.tv_usec = 0;
     bool finish = false;
     while (!finish)
     {    
-        int read_fm = select(__daemon_to_fm[0] + 1, &set, NULL, NULL, &timeout);
+        int read_fm = select(__daemon_to_fm[0], &set, NULL, NULL, &timeout);
         if(read_fm == D_FAILURE){
             syslog(LOG_ERR, "select could not block: %s", strerror(errno));
             exit(EXIT_FAILURE);
         } else if (read_fm == 0) {
-            syslog(LOG_ERR, "reportman_fm did not respond after %lds, exiting...: %s", timeout.tv_sec, strerror(errno));
+            syslog(LOG_ERR, "reportman_fm did not respond after %lds, exiting...: %s", timeout_secs, strerror(errno));
             exit(EXIT_FAILURE);
         }
         char buffer[COMMUNICATION_BUFFER_SIZE];
@@ -577,7 +574,7 @@ static pid_t __start_reportman_fm(void) {
         snprintf(daemon_to_fm_read_pipe, sizeof(daemon_to_fm_read_pipe), "%d", __daemon_to_fm[0]);
         snprintf(fm_to_daemon_write_pipe, sizeof(fm_to_daemon_write_pipe), "%d", fm_to_daemon[1]); 
 
-        execl("reportman_fm", "reportman_fm",
+        execl("bin/reportman_fm", "reportman_fm",
               "--from-daemon",
               "--d-to-c", daemon_to_fm_read_pipe,
               "--c-to-d", fm_to_daemon_write_pipe,
@@ -616,8 +613,7 @@ static pid_t __start_reportman_monitor(void) {
         syslog(LOG_ERR, "reportman could not spawn filemanager child: %s", strerror(errno));
         exit(EXIT_FAILURE);
     case D_SUCCESS: // is child
-
-        execl("reportman_monitor", "reportman_monitor",
+        execl("bin/reportman_monitor", "reportman_monitor",
               "--from-daemon",
               R_REPORTS_DIRECTORY,
               R_DASHBOARD_DIRECTORY,
@@ -644,19 +640,15 @@ static int __establish_pipes(int daemon_pipes[2], int child_pipes[2]) {
 
 static void __configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args) {
     int i;
+
     for (i = 1; i < argc; i++)
     {
         char arg_string[COMMUNICATION_BUFFER_SIZE];
         unsigned short arg_int[1];
-        if (arg_parse_flag(argv[i], "-nd", "--no-daemon"))
+        if (arg_parse_flag(argv[i], "-nd", "--no-daemon") == R_PARSE_SUCCESS)
         {
             args->make_daemon = false; 
             continue;
-        }
-        else if (arg_parse_ushort(argc, argv, &i, "-p", "--port", "port", arg_int)){
-            args->daemon_port = *arg_int; 
-            continue;
-
         }
         else if (arg_parse_flag(argv[i], "-f", "--force"))
         {
@@ -664,9 +656,13 @@ static void __configure_daemon_args(int argc, char *argv[], daemon_arguments_t *
             continue;
         }
         else if(arg_parse_flag(argv[i], "-c", "--close")) {
+
             args->close = true;
             continue;
-
+        }
+        else if (arg_parse_ushort(argc, argv, &i, "-p", "--port", "port", arg_int)){
+            args->daemon_port = *arg_int; 
+            continue;
         }
         else if (arg_parse_string(argc, argv, &i, "-tt", "--transfer-time", "time stamp", arg_string))
         {
