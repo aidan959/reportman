@@ -1,6 +1,5 @@
 #ifndef REPORTMAND_BIND_PORT
 #define REPORTMAND_BIND_PORT 7770
-#define COMMUNICATION_BUFFER_SIZE 1024
 #define IS_SINGLETON 0
 #define BIND_FAILED -1
 
@@ -32,6 +31,8 @@
 #define D_DEFAULT_BACKUP_TIME "00:30"
 #define D_DEFAULT_TRANSFER_TIME "23:30"
 
+#define D_HEALTH_PROBE_INTERVAL_SEC 5
+
 #define D_INTERVAL (24 * 60 * 60)
 
 #define R_PARSE_SUCCESS 1
@@ -50,7 +51,7 @@
 #define true 1
 
 #include "reportman_types.h"
-int start_child_process(const char *executable, const char *extra_args[], child_process_t *child_process, int d_socket);
+int start_child_process(child_process_t *child_process, const char *extra_args[], int d_socket);
 
 void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args);
 void configure_client_args(int argc, char *argv[], client_arguments_t *args);
@@ -71,16 +72,29 @@ int main(int argc, char *argv[]);
 
 bool ipc_is_command(unsigned long msg);
 bool ipc_is_ack(unsigned long msg);
+bool ipc_is_health_probe(unsigned long msg);
+
 bool ipc_is_yes(unsigned long msg);
 bool ipc_is_no(unsigned long msg);
 bool ipc_is_ulong(unsigned long msg);
 
-int ipc_send_command(unsigned long *msg, command_t command);
+bool ipc_send_command(ipc_pipes_t *pipes, IPC_COMMANDS command);
+bool ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS * command);
+
+
 
 bool ipc_send_ulong(ipc_pipes_t *pipes, unsigned long value);
-bool ipc_send_ack(ipc_pipes_t *pipes);
 
+bool ipc_send_ack(ipc_pipes_t *pipes);
 bool ipc_get_ack(ipc_pipes_t *pipes);
+
+
+bool ipc_send_health_probe(ipc_pipes_t *pipes);
+bool ipc_send_health_probe(ipc_pipes_t *pipes);
+
+bool ipc_send_test_data(ipc_pipes_t *pipes, const test_data_t *data);
+int ipc_get_test_data(ipc_pipes_t *pipes, test_data_t *data);
+
 unsigned long ipc_get_ulong(ipc_pipes_t *pipes);
 int acknowledge_daemon(ipc_pipes_t *pipes);
 

@@ -106,12 +106,28 @@ static int __started_from_daemon(void)
         }
         if(fds[FM_FD_POLL_PARENT].revents & POLLIN)
         {
-            char buffer[COMMUNICATION_BUFFER_SIZE];
-            ssize_t length;
-            if ((length = read(fds[FM_FD_POLL_PARENT].fd, buffer, COMMUNICATION_BUFFER_SIZE)) > 0)
-            {
-                syslog(LOG_NOTICE, "Received message from parent: %s", buffer);
+            IPC_COMMANDS command;
+            if(!ipc_get_command(&__fm_args.pipes, &command)) {
+                syslog(LOG_ERR, "Unexpected error reading command from daemon.");
             }
+            else
+            {
+                switch (command) {
+                case IPC_COMMAND_HEALTH_PROBE:
+                    if(!ipc_send_command(&__fm_args.pipes, IPC_COMMAND_ACK)){
+                        syslog(LOG_ERR, "Failed to send health probe response to daemon.");
+                    };
+
+                    break;
+                case IPC_COMMAND_NO:
+                case IPC_COMMAND_YES:
+                case IPC_COMMAND_ACK:
+                default:
+                    syslog(LOG_ERR, "Received unexpected command from daemon.");
+                    break;
+                }
+            };
+
         }
         if (fds[FM_FD_POLL_SIGNAL].revents & POLLIN)
         {
@@ -135,11 +151,11 @@ static int __started_from_daemon(void)
             }
 
             syslog(LOG_CRIT,
-                   "Received unexpected signal ? ");
+                   "Received unexpected signal %u ",fdsi.ssi_signo);
         }
-        __shutdown_signals(signal_fd, &__fm_args.pipes);
 
     }
+    __shutdown_signals(signal_fd, &__fm_args.pipes);
     exit(EXIT_SUCCESS);
 }
 

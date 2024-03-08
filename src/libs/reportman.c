@@ -17,6 +17,7 @@
 #include "include/reportman.h"
 #include <bits/sigaction.h>
 #include <bits/types/sigset_t.h>
+#include <sys/select.h>
 
 
 int __parse_signed_int_arg(char * input);
@@ -25,13 +26,19 @@ void to_lower_case(char *str);
 static int __initialize_pipes(int daemon_pipes[2], int child_pipes[2]);
 
 bool ipc_is_command(unsigned long msg){
-    if ((msg & IPC_COMMAND_FLAG) != IPC_COMMAND_FLAG)
+    if ((msg & R_IPC_COMMAND_FLAG) != R_IPC_COMMAND_FLAG)
         return false;
     return true;
 }
 
 bool ipc_is_ack(unsigned long msg) {
     if ((msg & IPC_COMMAND_ACK) != IPC_COMMAND_ACK)
+        return false;
+    return true;
+}
+
+bool ipc_is_health_probe(unsigned long msg) {
+    if ((msg & IPC_COMMAND_HEALTH_PROBE) != IPC_COMMAND_HEALTH_PROBE)
         return false;
     return true;
 }
@@ -79,6 +86,13 @@ bool ipc_send_ack(ipc_pipes_t *pipes) {
     };
     return true;
 }
+bool ipc_send_health_probe(ipc_pipes_t *pipes) {
+    unsigned long value = R_IPC_COMMAND_HEALTH_PROBE;
+    if(write(pipes->write, &value, sizeof(unsigned long)) == -1) {
+        return false;
+    };
+    return true;
+}
 bool ipc_send_ulong(ipc_pipes_t *pipes, unsigned long value) {
     if (value > R_IPC_VALUE_UINT_MAX) // max value
         return false;
@@ -99,11 +113,49 @@ unsigned long ipc_get_ulong(ipc_pipes_t *pipes) {
     } 
     return msg & ~R_IPC_VALUE_UINT_FLAG;
 }
+bool ipc_send_command(ipc_pipes_t *pipes, IPC_COMMANDS  command) {
+    unsigned long value = command;
+    if(write(pipes->write, &value, sizeof(unsigned long)) == -1) {
+        return false;
+    };
+    return true;
+}
+bool ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS *command) {
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(pipes->read, &readfds);
+    struct timeval timeout;
+    timeout.tv_sec = R_IPC_TIMEOUT;
+    timeout.tv_usec = 0;
+        // Set up an alarm for the timeout
+    int ret = select(pipes->read + 1, &readfds, NULL, NULL, &timeout);
+    if(ret == -1){
+        syslog(LOG_ERR, "Error in select: %s", strerror(errno));
+        return false;
+    } else if(ret == 0) {
+        syslog(LOG_ERR, "Timeout in select");
+        return false;
+    } else {
+        unsigned long msg;
+        if(read(pipes->read, &msg, sizeof(unsigned long))<0)
+            return false;
+        if (!(ipc_is_command(msg)))
+            return false; 
+        *command = (IPC_COMMANDS)msg;
+        return true;
+    }
+}
 bool ipc_get_ack(ipc_pipes_t *pipes) {
     unsigned long msg;
     if(read(pipes->read, &msg, sizeof(unsigned long))<0)
         return false;
     return ipc_is_ack(msg);
+}
+bool ipc_get_health_probe(ipc_pipes_t *pipes) {
+    unsigned long msg;
+    if(read(pipes->read, &msg, sizeof(unsigned long))<0)
+        return false;
+    return ipc_is_health_probe(msg);
 }
 
 bool ipc_get_no(ipc_pipes_t *pipes) {
@@ -117,6 +169,33 @@ bool ipc_get_yes(ipc_pipes_t *pipes) {
     if(read(pipes->read, &msg, sizeof(unsigned long))<0)
         return false;
     return ipc_is_yes(msg);
+}
+
+bool ipc_send_test_data(ipc_pipes_t *pipes, const test_data_t *data) {
+    
+
+    if(write(pipes->write, data, sizeof(test_data_t)) == -1) {
+        return false;
+    };
+    size_t test_string_len = strlen(data->test_string);
+    if(write(pipes->write, data->test_string, sizeof(char) * test_string_len) == -1) {
+        return false;
+    };
+
+    return true;
+}
+
+
+int ipc_get_test_data(ipc_pipes_t *pipes, test_data_t *data) {
+
+    if(read(pipes->read, data, sizeof(test_data_t))<0)
+        return false;
+    ssize_t read_str = read(pipes->read, data->test_string, sizeof(char) * COMMUNICATION_BUFFER_SIZE);
+    if(read_str<0)
+        return false;
+    data->test_string[read_str] = '\0';
+
+    return true;
 }
 
 int acknowledge_daemon(ipc_pipes_t *pipes)
@@ -136,7 +215,6 @@ int acknowledge_daemon(ipc_pipes_t *pipes)
     return D_SUCCESS;
 }
 
-
 unsigned short __parse_short_arg(char * input) {
     char *endptr;
     long value = strtol(input, &endptr, 10);
@@ -150,6 +228,7 @@ unsigned short __parse_short_arg(char * input) {
     }
     return (unsigned short)value;
 }
+
 unsigned int __parse_unsigned_int_arg(char * input){
     char *endptr;
     long value = strtol(input, &endptr, 10);
@@ -348,7 +427,7 @@ int get_hh_mm_str(const char * input_HH_MM,time_t * next_time) {
 /// @param child_process empty child process struct
 /// @param d_socket connection socket
 /// @return pid of child
-int start_child_process(const char *executable, const char *extra_args[], child_process_t *child_process, int d_socket)
+int start_child_process(child_process_t *child_process, const char *extra_args[], int d_socket)
 {
     static int child_pipes[2];
     static int parent_pipes[2];
@@ -361,7 +440,7 @@ int start_child_process(const char *executable, const char *extra_args[], child_
     pid_t fork_pid = fork();
     if (fork_pid == D_FAILURE)
     {
-        syslog(LOG_ERR, "reportman could not spawn %s child: %s", executable, strerror(errno));
+        syslog(LOG_ERR, "reportman could not spawn %s child: %s", child_process->executable, strerror(errno));
         exit(EXIT_FAILURE);
     }
     else if (fork_pid == D_SUCCESS)
@@ -393,7 +472,7 @@ int start_child_process(const char *executable, const char *extra_args[], child_
         #pragma GCC diagnostic ignored "-Wcast-qual"
         const int fixed_args = 6;
         const char *args[arg_count + fixed_args]; // Extra space for fixed arguments and NULL terminator
-        args[0] = executable;                     // First arg is the name of the program
+        args[0] = child_process->executable;                     // First arg is the name of the program
         args[1] = "--from-daemon";
         args[2] = "--d-to-c";
         args[3] = parent_to_child_read_pipe;
@@ -407,7 +486,7 @@ int start_child_process(const char *executable, const char *extra_args[], child_
 
         args[arg_count + fixed_args] = NULL;
 
-        execv(executable, (char *const *)args);
+        execv(child_process->executable, (char *const *)args);
 
         #pragma GCC diagnostic pop
 
@@ -417,7 +496,7 @@ int start_child_process(const char *executable, const char *extra_args[], child_
 
         if (err == 2)
         {
-            syslog(LOG_ERR, "Could not find %s executable. Please ensure it is executable from call location.", executable);
+            syslog(LOG_ERR, "Could not find %s executable. Please ensure it is executable from call location.", child_process->executable);
         }
 
         exit(EXIT_FAILURE);
@@ -428,7 +507,8 @@ int start_child_process(const char *executable, const char *extra_args[], child_
     child_process->pipes.write = parent_pipes[1];
     child_process->pipes.read = child_pipes[0];
 
-    syslog(LOG_DEBUG, "%s child spawned with PID: %d", executable, fork_pid);
+    syslog(LOG_DEBUG, "%s child spawned with PID: %d", child_process->executable, fork_pid);
+    child_process->pid = fork_pid;
     return fork_pid;
 }
 

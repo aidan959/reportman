@@ -11,5 +11,6 @@ enum
     RMD_FD_POLL_CLIENT = 1,
     RMD_FD_POLL_FM = 2,
     RMD_FD_POLL_MON = 3,
-    RMD_FD_POLL_MAX = 4
+    RMD_FD_HEALTH_PROBE = 4,
+    RMD_FD_POLL_MAX = 5
 };

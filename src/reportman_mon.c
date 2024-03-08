@@ -129,12 +129,26 @@ static int __monitor_paths(void)
         // Received message from parent
         if(fds[FM_FD_POLL_PARENT].revents & POLLIN)
         {
-            char buffer[COMMUNICATION_BUFFER_SIZE];
-            ssize_t length;
-            if ((length = read(fds[FM_FD_POLL_PARENT].fd, buffer, COMMUNICATION_BUFFER_SIZE)) > 0)
-            {
-                syslog(LOG_NOTICE, "Received message from parent: %s", buffer);
+            IPC_COMMANDS command;
+            if(!ipc_get_command(&__monitor_args.pipes, &command)) {
+                syslog(LOG_ERR, "Unexpected error reading command from daemon.");
             }
+            else
+            {
+                switch (command) {
+                case IPC_COMMAND_HEALTH_PROBE:
+                    if(!ipc_send_command(&__monitor_args.pipes, IPC_COMMAND_ACK)){
+                        syslog(LOG_ERR, "Failed to send ACK to daemon.");
+                    };
+                    break;
+                case IPC_COMMAND_NO:
+                case IPC_COMMAND_YES:
+                case IPC_COMMAND_ACK:
+                default:
+                    syslog(LOG_ERR, "Received unexpected command from daemon.");
+                    break;
+                }
+            };
         }
         // FDs was populated / there are events to process
         if (fds[FM_FD_POLL_SIGNAL].revents & POLLIN)
@@ -278,6 +292,17 @@ static int __started_from_daemon(void)
 
     syslog(LOG_NOTICE, "reportman_mon started by daemon.");
     acknowledge_daemon(&__monitor_args.pipes);
+
+    test_data_t test_data = {
+        .test_bool = false,
+        .test_num = 100,
+        .test_string = "blahhhhh",
+    };
+    ipc_send_test_data(&__monitor_args.pipes, &test_data);
+
+    ipc_get_test_data(&__monitor_args.pipes, &test_data);
+    syslog(LOG_WARNING, "%d\n%s\n%s\n", test_data.test_num, test_data.test_string, test_data.test_bool ? "true" : "false");
+
     return __monitor_paths();
 }
 

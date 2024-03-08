@@ -1,16 +1,18 @@
 #include <stdbool.h>
 #include <time.h>
+#include <signal.h>
 #define BACKUP_MODE (unsigned)0
 #define TRANSFER_MODE (unsigned)1
+#define COMMUNICATION_BUFFER_SIZE 1024
 
 
+#define R_IPC_TIMEOUT 5
 
 #define R_IPC_COMMAND_FLAG 0xFF000000
 #define R_IPC_COMMAND_NO 0xFF000000
 #define R_IPC_COMMAND_YES 0xFF000001
 #define R_IPC_COMMAND_ACK 0xFF000002
-#define R_IPC_COMMAND_STR 0xFF000002
-
+#define R_IPC_COMMAND_HEALTH_PROBE 0xFF000003
 #define R_IPC_VALUE_UINT_FLAG 0xF0000000
 #define R_IPC_VALUE_UINT_MAX 0xEFFFFFFF
 
@@ -72,11 +74,10 @@ typedef enum {
 
 
 typedef enum {
-    IPC_COMMAND_FLAG= R_IPC_COMMAND_FLAG,
     IPC_COMMAND_NO  = R_IPC_COMMAND_NO,
     IPC_COMMAND_YES = R_IPC_COMMAND_YES,
     IPC_COMMAND_ACK = R_IPC_COMMAND_ACK,
-    IPC_COMMAND_STR = R_IPC_COMMAND_STR,
+    IPC_COMMAND_HEALTH_PROBE = R_IPC_COMMAND_HEALTH_PROBE,
 } IPC_COMMANDS;
 typedef struct
 {
@@ -118,4 +119,16 @@ typedef enum  {
 typedef struct {
     pid_t pid;
     ipc_pipes_t pipes;
+    unsigned short max_retries;
+    unsigned short retries;
+    const char *executable;
+
 } child_process_t;
+
+
+typedef struct {
+    unsigned int test_num;
+    char test_string[COMMUNICATION_BUFFER_SIZE];
+    bool test_bool;
+} test_data_t;
+

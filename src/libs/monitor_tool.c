@@ -48,8 +48,6 @@ static monitor_conf_t __monitor_conf = {
 
 static FILE* __log_file_fd = NULL;
 
-
-
 void mt_event_process(struct inotify_event *event, monitor_t *monitor)
 {
     int i;
@@ -106,33 +104,37 @@ void mt_event_process(struct inotify_event *event, monitor_t *monitor)
         return;
     }
 }
+
+typedef struct {
+    uint32_t mask;
+    const char* message;
+} event_mask_t;
+
+
+
+event_mask_t event_masks[] = {
+    {IN_ACCESS, "IN_ACCESS"},
+    {IN_ATTRIB, "IN_ATTRIB"},
+    {IN_OPEN, "IN_OPEN"},
+    {IN_CLOSE_WRITE, "IN_CLOSE_WRITE"},
+    {IN_CLOSE_NOWRITE, "IN_CLOSE_NOWRITE"},
+    {IN_CREATE, "IN_CREATE"},
+    {IN_DELETE, "IN_DELETE"},
+    {IN_DELETE_SELF, "IN_DELETE_SELF"},
+    {IN_MODIFY, "IN_MODIFY"},
+    {IN_MOVE_SELF, "IN_MOVE_SELF"},
+    {IN_MOVED_FROM, "IN_MOVED_FROM"},
+    {IN_MOVED_TO, "IN_MOVED_TO"},
+};
 static const char * __get_log_message(struct inotify_event *event) {
-    if (event->mask & IN_ACCESS)
-        return "IN_ACCESS";
-    if (event->mask & IN_ATTRIB)
-        return "IN_ATTRIB";
-    if (event->mask & IN_OPEN)
-        return "IN_OPEN";
-    if (event->mask & IN_CLOSE_WRITE)
-        return "IN_CLOSE_WRITE";
-    if (event->mask & IN_CLOSE_NOWRITE)
-        return "IN_CLOSE_NOWRITE";
-    if (event->mask & IN_CREATE)
-        return "IN_CREATE";
-    if (event->mask & IN_DELETE)
-        return "IN_DELETE";
-    if (event->mask & IN_DELETE_SELF)
-        return "IN_DELETE_SELF";
-    if (event->mask & IN_MODIFY)
-        return "IN_MODIFY";
-    if (event->mask & IN_MOVE_SELF)
-        return "IN_MOVE_SELF";
-    if (event->mask & IN_MOVED_FROM)
-        return "IN_MOVED_FROM";
-    if (event->mask & IN_MOVED_TO)
-        return "IN_MOVED_TO";
-    return "UNDEFINED";
+    for (long unsigned int i = 0; i < sizeof(event_masks) / sizeof(event_mask_t); i++) {
+        if (!(event->mask & event_masks[i].mask)) continue ;
+
+        return event_masks[i].message;
+    }
+    return "UNKNOWN";
 }
+
 void mt_shutdown_inotify(int inotify_fd, monitor_t *monitor)
 {
     int i;
