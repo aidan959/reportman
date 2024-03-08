@@ -121,6 +121,7 @@ bool ipc_get_yes(ipc_pipes_t *pipes) {
 
 int acknowledge_daemon(ipc_pipes_t *pipes)
 {
+    
     if (!ipc_send_ack(pipes))
     {
         syslog(LOG_ERR, "Failed to send ack to daemon.");
@@ -344,10 +345,10 @@ int get_hh_mm_str(const char * input_HH_MM,time_t * next_time) {
 /// @brief Creates a child process, mirrors new process and returns communication pipe ids
 /// @param executable
 /// @param extra_args
-/// @param write_fd
-/// @param read_fd
+/// @param child_process empty child process struct
+/// @param d_socket connection socket
 /// @return pid of child
-pid_t start_child_process(const char *executable, const char *extra_args[], ipc_pipes_t *pipes, int d_socket)
+int start_child_process(const char *executable, const char *extra_args[], child_process_t *child_process, int d_socket)
 {
     static int child_pipes[2];
     static int parent_pipes[2];
@@ -424,8 +425,8 @@ pid_t start_child_process(const char *executable, const char *extra_args[], ipc_
     close(parent_pipes[0]);
     close(child_pipes[1]);
 
-    pipes->write = parent_pipes[1];
-    pipes->read = child_pipes[0];
+    child_process->pipes.write = parent_pipes[1];
+    child_process->pipes.read = child_pipes[0];
 
     syslog(LOG_DEBUG, "%s child spawned with PID: %d", executable, fork_pid);
     return fork_pid;

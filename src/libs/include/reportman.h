@@ -50,7 +50,7 @@
 #define true 1
 
 #include "reportman_types.h"
-pid_t start_child_process(const char *executable, const char *extra_args[], ipc_pipes_t * pipes, int d_socket);
+int start_child_process(const char *executable, const char *extra_args[], child_process_t *child_process, int d_socket);
 
 void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args);
 void configure_client_args(int argc, char *argv[], client_arguments_t *args);

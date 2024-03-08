@@ -15,7 +15,10 @@
 #include <linux/limits.h>
 #include <unistd.h>
 #include <libgen.h>
+#include <sys/signalfd.h>
+#include <sys/wait.h>
 
+#include <poll.h>
 #include "libs/include/daemonize.h"
 #include "libs/include/directory_tool.h"
 #include "libs/include/reportman.h"
@@ -50,10 +53,16 @@ const char DASHBOARD_DIRECTORY[] = R_DASHBOARD_DIRECTORY;
 
 static timer_t __transfer_timer;
 static timer_t __backup_timer;
-
-
-
 static bool __client_request_close = false;
+
+static child_process_t __fm_process = {
+    .pipes = {
+        .read = -1,
+        .write = -1}};
+static child_process_t __mon_process = {
+    .pipes = {
+        .read = -1,
+        .write = -1}};
 
 int d_socket;
 
@@ -77,25 +86,20 @@ int main(int argc, char *argv[])
 {
     __configure_daemon_args(argc, argv, &__exec_args);
 
-    signal(SIGINT, __clean_close);
-    signal(SIGTERM, __clean_close);
-
     __acquire_singleton();
 
     __become_daemon();
 
     __init_directories();
 
-    ipc_pipes_t fm_pipes;
-    pid_t reportman_fm_pid = start_child_process("reportman_fm", NULL, &fm_pipes, d_socket);
-    syslog(LOG_DEBUG, "reportman_fd running as child (%d)", reportman_fm_pid);
-    acknowledge_client(&fm_pipes);
-    __reportman_fm_get_timers(&fm_pipes);
+    start_child_process("reportman_fm", NULL, &__fm_process, d_socket);
+    syslog(LOG_DEBUG, "reportman_fd running as child (%d)", __fm_process.pid);
+    acknowledge_client(&__fm_process.pipes);
+    __reportman_fm_get_timers(&__fm_process.pipes);
 
-    ipc_pipes_t mon_pipes;
-    pid_t reportman_mon_pid = start_child_process("reportman_mon", __directories, &mon_pipes, d_socket);
-    syslog(LOG_DEBUG, "reportman_mon running as child (%d)", reportman_mon_pid);
-    acknowledge_client(&mon_pipes);
+    start_child_process("reportman_mon", __directories, &__mon_process, d_socket);
+    syslog(LOG_DEBUG, "reportman_mon running as child (%d)", __mon_process.pid);
+    acknowledge_client(&__mon_process.pipes);
 
     // blocks to go to main loop
     int exit_code = __listen_to_clients();
@@ -167,74 +171,159 @@ static void __become_daemon(void)
         openlog("reportmand", LOG_PID, LOG_USER);
 }
 
+// TODO ABSTRACT THE METHODS HERE
+/// @brief Listens to client and child processes
+/// @param  
+/// @return Should exit
 static int __listen_to_clients(void)
 {
     char buffer[COMMUNICATION_BUFFER_SIZE];
     // lets give this a huge number before it restarts
     unsigned long long int client_id = 0;
-    while (1)
-    {
-        struct sockaddr_in client_addr;
-        socklen_t client_addr_len = sizeof(client_addr);
 
-        int client_fd = accept(d_socket, (struct sockaddr *)&client_addr, &client_addr_len);
-        if (client_fd < 0)
+    struct pollfd fds[RMD_FD_POLL_MAX];
+    int signal_fd;
+
+    if ((signal_fd = r_initialize_signals()) < 0)
+    {
+        syslog(LOG_ERR, "Could not initialize signals");
+        exit(EXIT_FAILURE);
+    }
+
+    fds[RMD_FD_POLL_SIGNAL].fd = signal_fd;
+    fds[RMD_FD_POLL_SIGNAL].events = POLLIN;
+    fds[RMD_FD_POLL_CLIENT].fd = d_socket;
+    fds[RMD_FD_POLL_CLIENT].events = POLLIN;
+    fds[RMD_FD_POLL_FM].fd = __fm_process.pipes.read;
+    fds[RMD_FD_POLL_FM].events = POLLIN;
+    fds[RMD_FD_POLL_MON].fd = __mon_process.pipes.read;
+    fds[RMD_FD_POLL_MON].events = POLLIN;
+
+    int poll_value;
+
+    while (!__client_request_close)
+    {
+        poll_value = poll(fds, RMD_FD_POLL_MAX, -1);
+
+        if (poll_value == -1)
         {
             if (errno == EINTR)
                 continue;
-            syslog(LOG_ALERT, "accept() failed (unexpected): %s", strerror(errno));
-            continue;
+            syslog(LOG_ERR, "poll() failed: %s", strerror(errno));
+            // TODO TELL CHILDREN TO DIE
+            exit(EXIT_FAILURE);
         }
-
-        fd_set readfds;
-        struct timeval tv;
-
-        tv.tv_sec = 10;
-        tv.tv_usec = 0;
-        FD_ZERO(&readfds);
-        FD_SET(client_fd, &readfds);
-
-        int retval;
-        while ((retval = select(client_fd + 1, &readfds, NULL, NULL, &tv)))
+        if (fds[RMD_FD_POLL_SIGNAL].revents & POLLIN)
         {
-            ssize_t len = read(client_fd, buffer, COMMUNICATION_BUFFER_SIZE - 1);
-            if (len > 0)
-            {
-                syslog(LOG_NOTICE, "Client %llu has connected to dameon.", client_id);
+            struct signalfd_siginfo fdsi;
 
-                // FD_ISSET(0, &readfds) will be true.
-                buffer[len] = '\0';
-                syslog(LOG_NOTICE, "Received command %s from client %llu\n", buffer, client_id);
-                command_response_t response;
-                __handle_command(buffer, client_id, &response);
-                write(client_fd, response.response, strlen(response.response));
-            }
-            else if (len == 0)
+            // signal size received from read was incorrect
+            ssize_t read_size;
+            if ((read_size = read(fds[RMD_FD_POLL_SIGNAL].fd, &fdsi, sizeof(fdsi))) != sizeof(fdsi))
             {
-                syslog(LOG_NOTICE, "Client %llu closed their connection.", client_id);
+                syslog(LOG_CRIT,
+                       "Couldn't read signal, wrong size read(fsdi '%ld' != read() '%ld')",
+                       sizeof(fdsi),
+                       read_size);
+                exit(EXIT_FAILURE);
+            }
+
+            if (fdsi.ssi_signo == SIGINT ||
+                fdsi.ssi_signo == SIGTERM)
+            {
+                // TODO TELL CHILDREN TO DIE
+                __client_request_close = true;
                 break;
             }
-            else if (len < 0)
+
+            syslog(LOG_CRIT,
+                   "Received unexpected signal ? ");
+        }
+        if (fds[RMD_FD_POLL_CLIENT].revents & POLLIN)
+        {
+            // TODO MOVE
+            struct sockaddr_in client_addr;
+            socklen_t client_addr_len = sizeof(client_addr);
+
+            int client_fd = accept(d_socket, (struct sockaddr *)&client_addr, &client_addr_len);
+            if (client_fd < 0)
             {
-                syslog(LOG_ERR, "read failed: %s", strerror(errno));
+                if (errno == EINTR)
+                    continue;
+                syslog(LOG_ALERT, "accept() failed (unexpected): %s", strerror(errno));
+                continue;
+            }
+
+            fd_set readfds;
+            struct timeval tv;
+
+            tv.tv_sec = 10;
+            tv.tv_usec = 0;
+            FD_ZERO(&readfds);
+            FD_SET(client_fd, &readfds);
+
+            int retval;
+            while ((retval = select(client_fd + 1, &readfds, NULL, NULL, &tv)))
+            {
+                ssize_t len = read(client_fd, buffer, COMMUNICATION_BUFFER_SIZE - 1);
+                if (len > 0)
+                {
+                    syslog(LOG_NOTICE, "Client %llu has connected to dameon.", client_id);
+
+                    // FD_ISSET(0, &readfds) will be true.
+                    buffer[len] = '\0';
+                    syslog(LOG_NOTICE, "Received command %s from client %llu\n", buffer, client_id);
+                    command_response_t response;
+                    __handle_command(buffer, client_id, &response);
+                    write(client_fd, response.response, strlen(response.response));
+                }
+                else if (len == 0)
+                {
+                    syslog(LOG_NOTICE, "Client %llu closed their connection.", client_id);
+                    break;
+                }
+                else if (len < 0)
+                {
+                    syslog(LOG_ERR, "read failed: %s", strerror(errno));
+                }
+            }
+            if (retval == -1)
+            {
+                syslog(LOG_ERR, "select() failed: %s", strerror(errno));
+            }
+            else
+            {
+                // no comms made in 10 seconds - lets close prematurely so another client can connect
+                char timeout_msg[] = "Timeout reached. Closing connection.";
+                write(client_fd, timeout_msg, sizeof(timeout_msg));
+            }
+
+            close(client_fd); // Close the client socket
+            if (__client_request_close)
+                break;
+            client_id++;
+        }
+        if (fds[RMD_FD_POLL_FM].revents & POLLIN)
+        {
+            char fm_buffer[COMMUNICATION_BUFFER_SIZE];
+            ssize_t length;
+            if ((length = read(fds[RMD_FD_POLL_FM].fd, fm_buffer, COMMUNICATION_BUFFER_SIZE)) > 0)
+            {
+                syslog(LOG_NOTICE, "Received message from reportman_fm: %s", fm_buffer);
             }
         }
-        if (retval == -1)
+        if (fds[RMD_FD_POLL_MON].revents & POLLIN)
         {
-            syslog(LOG_ERR, "select() failed: %s", strerror(errno));
+            char mon_buffer[COMMUNICATION_BUFFER_SIZE];
+            ssize_t length;
+            if ((length = read(fds[RMD_FD_POLL_MON].fd, mon_buffer, COMMUNICATION_BUFFER_SIZE)) > 0)
+            {
+                syslog(LOG_NOTICE, "Received message from reportman_mon: %s", mon_buffer);
+            }
         }
-        else
-        {
-            // no comms made in 10 seconds - lets close prematurely so another client can connect
-            char timeout_msg[] = "Timeout reached. Closing connection.";
-            write(client_fd, timeout_msg, sizeof(timeout_msg));
-        }
-
-        close(client_fd); // Close the client socket
-        if (__client_request_close)
-            break;
-        client_id++;
+    
     }
+    __clean_close(signal_fd);
     return D_SUCCESS;
 }
 
@@ -497,10 +586,38 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-static void __clean_close(int sig)
+
+static void __kill_children(void) {
+    if (__fm_process.pid > 0)
+    {
+        kill(__fm_process.pid, SIGTERM);
+    }
+    if (__mon_process.pid > 0)
+    {
+        kill(__mon_process.pid, SIGTERM);
+    }
+    int status;
+    if (__fm_process.pid > 0)
+    {
+        waitpid(__fm_process.pid,  &status, 0);
+    }
+    if (__mon_process.pid > 0)
+    {
+        waitpid(__mon_process.pid, &status, 0);
+    }
+
+}
+static void __clean_close(int signal_fd)
 {
+    close(__fm_process.pipes.read);
+    close(__mon_process.pipes.read);
+
+    __kill_children();
+
+    close(signal_fd);
+
     close(d_socket);
-    exit(0);
+    exit(EXIT_SUCCESS);
 }
 #pragma GCC diagnostic pop
 
@@ -566,18 +683,25 @@ static int __reportman_fm_get_timers(ipc_pipes_t *pipes)
         syslog(LOG_ERR, "reportman_fm did not respond after %lds, exiting...: %s", timeout_secs, strerror(errno));
         exit(EXIT_FAILURE);
     }
-    if (FD_ISSET(pipes->read, &set)) {
+    if (FD_ISSET(pipes->read, &set))
+    {
         unsigned long temp_timer = ipc_get_ulong(pipes);
-        if (temp_timer != R_IPC_VALUE_UINT_FLAG) {
+        if (temp_timer != R_IPC_VALUE_UINT_FLAG)
+        {
             __backup_timer = (timer_t)temp_timer;
-        } else {
+        }
+        else
+        {
             syslog(LOG_ERR, "reportman_fm did not send backup timer, exiting...: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
         temp_timer = ipc_get_ulong(pipes);
-        if (temp_timer != R_IPC_VALUE_UINT_FLAG) {
+        if (temp_timer != R_IPC_VALUE_UINT_FLAG)
+        {
             __transfer_timer = (timer_t)temp_timer;
-        } else {
+        }
+        else
+        {
             syslog(LOG_ERR, "reportman_fm did not send backup timer, exiting...: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
@@ -588,9 +712,10 @@ static int __reportman_fm_get_timers(ipc_pipes_t *pipes)
 }
 
 /// @brief Acknowledges client connection.
-/// @param pipes 
-/// @return Success 
-int acknowledge_client(ipc_pipes_t *pipes){
+/// @param pipes
+/// @return Success
+int acknowledge_client(ipc_pipes_t *pipes)
+{
     struct timeval timeout;
 
     time_t timeout_secs = 10;
@@ -614,12 +739,15 @@ int acknowledge_client(ipc_pipes_t *pipes){
         syslog(LOG_ERR, "Child did not respond after %lds, exiting...: %s", timeout_secs, strerror(errno));
         exit(EXIT_FAILURE);
     }
-    if (FD_ISSET(pipes->read, &set)) {
-        if (!ipc_get_ack(pipes)){
+    if (FD_ISSET(pipes->read, &set))
+    {
+        if (!ipc_get_ack(pipes))
+        {
             syslog(LOG_ERR, "Child did not send IPC ACK exiting...: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
-        if (!ipc_send_ack(pipes)){
+        if (!ipc_send_ack(pipes))
+        {
             syslog(LOG_ERR, "Child could not send IPC ACK exiting...: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
@@ -801,5 +929,3 @@ static bool __remove_last_item_path(const char path[PATH_MAX], char directory[PA
     fprintf(stderr, "%s", item);
     return true;
 }
-
-

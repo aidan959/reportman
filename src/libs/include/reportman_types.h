@@ -53,6 +53,8 @@ typedef struct
 typedef struct 
 {
     bool from_daemon;
+    bool debug;
+
     time_t backup_time;
     time_t transfer_time;
     bool do_backup;
@@ -112,3 +114,8 @@ typedef enum  {
     BACKUP=BACKUP_MODE,
     TRANSFER=TRANSFER_MODE,
 } transfer_method_t;
+
+typedef struct {
+    pid_t pid;
+    ipc_pipes_t pipes;
+} child_process_t;

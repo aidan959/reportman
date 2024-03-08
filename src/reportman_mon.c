@@ -90,11 +90,11 @@ static int __monitor_paths(void)
     fds[MT_FD_POLL_INOTIFY].events = POLLIN;
     fds[FM_FD_POLL_PARENT].fd = __monitor_args.pipes.read;
     fds[FM_FD_POLL_PARENT].events = POLLIN;
-    int poll_count;
+    nfds_t poll_count;
     if(__monitor_args.pipes.read > 0)
-        poll_count = FM_FD_POLL_MAX;
+        poll_count = (nfds_t)FM_FD_POLL_MAX;
     else
-        poll_count = FM_FD_POLL_MAX - 1; 
+        poll_count = (nfds_t)FM_FD_POLL_MAX - 1; 
     for (;;)
     {
         // blocks to read for parent / signals / inotify events

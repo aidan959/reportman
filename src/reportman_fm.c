@@ -28,6 +28,7 @@ static timer_t __transfer_timer;
 
 static reportman_fm_args_t __fm_args = {
     .from_daemon = false,
+    .debug = false,
     .pipes = {.read = -1,
               .write = -1},
     .backup_time = 0,
@@ -60,7 +61,7 @@ static int __started_from_daemon(void)
         openlog("reportman_fm", LOG_PID, LOG_USER);
         return 0;
     }
-    if (__fm_args.pipes.read < 0 || __fm_args.pipes.write < 0)
+    if (!__fm_args.debug && (__fm_args.pipes.read < 0 || __fm_args.pipes.write < 0))
     {
         syslog(LOG_ERR, "Pipes not received from daemon.");
         fprintf(stderr, "-fd can ONLY be called from a daemon.");
@@ -73,8 +74,8 @@ static int __started_from_daemon(void)
     __schedule_backup(__fm_args.backup_time);
     __schedule_transfer(__fm_args.transfer_time);
 
-    acknowledge_daemon(&__fm_args.pipes);
-    __report_to_daemon();
+    if(!__fm_args.debug) acknowledge_daemon(&__fm_args.pipes);
+    if(!__fm_args.debug)__report_to_daemon();
 
     int signal_fd;
     struct pollfd fds[FM_FD_POLL_MAX];
@@ -142,6 +143,10 @@ static int __started_from_daemon(void)
     exit(EXIT_SUCCESS);
 }
 
+
+/// @brief Closes pipe and signal file descriptors
+/// @param signal_fd 
+/// @param pipes 
 static void __shutdown_signals(int signal_fd, ipc_pipes_t *pipes)
 {
     close(pipes->read);
@@ -211,6 +216,11 @@ void __configure_reportman_fm_args(int argc, char *argv[], reportman_fm_args_t *
         if (arg_parse_flag(argv[i], "-fd", "--from-daemon"))
         {
             args->from_daemon = true;
+            continue;
+        }
+        else if (arg_parse_flag(argv[i], "--debug", "--debug"))
+        {
+            args->debug = true;
             continue;
         }
         else if (arg_parse_int(argc, argv, &i, "--d-to-c", "--d-to-c", "daemon to fm read pipe id", arg_int))

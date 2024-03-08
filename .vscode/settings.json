@@ -50,7 +50,8 @@
         "reportman_fm.h": "c",
         "sigaction.h": "c",
         "limits.h": "c",
-        "directory_tool.h": "c"
+        "directory_tool.h": "c",
+        "wait.h": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/sbin/gcc",
     "C_Cpp.errorSquiggles": "enabled"
