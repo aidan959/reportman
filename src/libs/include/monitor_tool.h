@@ -14,12 +14,13 @@
 /* Size of buffer to use when reading inotify events */
 #define INOTIFY_BUFFER_SIZE 8192
 
-/* Enumerate list of FDs to poll */
+// Enumerate list of FDs to poll
 enum
 {
-    FD_POLL_SIGNAL = 0,
-    FD_POLL_INOTIFY = 1,
-    FD_POLL_MAX = 2
+    FM_FD_POLL_SIGNAL = 0,
+    MT_FD_POLL_INOTIFY = 1,
+    FM_FD_POLL_PARENT = 2,
+    FM_FD_POLL_MAX = 3
 };
 
 
@@ -34,3 +35,11 @@ enum
 
 
 int monitor_paths(size_t num_paths, const char* const*dirs, monitor_conf_t monitor_conf );
+void mt_event_process(struct inotify_event *event, monitor_t *monitor);
+void mt_shutdown_inotify(int inotify_fd, monitor_t *monitor);
+void mt_shutdown_signals(int signal_fd, ipc_pipes_t *pipes);
+int mt_initialize_signals(void);
+int mt_initialize_inotify(size_t num_paths, const char *const*paths, monitor_t *monitor);
+void mt_update_monitor_conf(monitor_conf_t * monitor_conf);
+int mt_initialize_log_file(void);
+int mt_close_log_file(void);

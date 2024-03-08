@@ -5,115 +5,136 @@
 #include <stdbool.h>
 #include <string.h>
 #include <libgen.h> 
+#include <signal.h> 
+#include <sys/signalfd.h>
 #include <errno.h>
 #include <ctype.h>
 #include <time.h>
 #include <linux/limits.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/syslog.h>
 #include "include/reportman.h"
+#include <bits/sigaction.h>
+#include <bits/types/sigset_t.h>
 
 
 int __parse_signed_int_arg(char * input);
 bool __parse_bool_arg(char * input);
 void to_lower_case(char *str);
+static int __initialize_pipes(int daemon_pipes[2], int child_pipes[2]);
 
-bool ipc_is_command(unsigned int *msg){
-    if ((*msg & IPC_COMMAND_FLAG) != IPC_COMMAND_FLAG)
+bool ipc_is_command(unsigned long msg){
+    if ((msg & IPC_COMMAND_FLAG) != IPC_COMMAND_FLAG)
         return false;
     return true;
 }
 
-bool ipc_is_ack(unsigned int *msg) {
-    if ((*msg & IPC_COMMAND_ACK) != IPC_COMMAND_ACK)
+bool ipc_is_ack(unsigned long msg) {
+    if ((msg & IPC_COMMAND_ACK) != IPC_COMMAND_ACK)
         return false;
     return true;
 }
 
-bool ipc_is_yes(unsigned int *msg) {
-    if ((*msg & IPC_COMMAND_YES) != IPC_COMMAND_YES)
+bool ipc_is_yes(unsigned long msg) {
+    if ((msg & IPC_COMMAND_YES) != IPC_COMMAND_YES)
         return false;
     return true;
 }
-bool ipc_is_no(unsigned int *msg) {
-    if ((*msg & IPC_COMMAND_NO) != IPC_COMMAND_NO)
+bool ipc_is_no(unsigned long msg) {
+    if ((msg & IPC_COMMAND_NO) != IPC_COMMAND_NO)
         return false;
     return true;
 }
 
-bool ipc_is_unint(unsigned int *msg) {
-    if ((*msg & R_IPC_VALUE_UINT_FLAG) != R_IPC_VALUE_UINT_FLAG)
+bool ipc_is_unint(unsigned long msg) {
+    if ((msg & R_IPC_VALUE_UINT_FLAG) != R_IPC_VALUE_UINT_FLAG)
         return false;
     return true;
 }
 
 bool ipc_send_yes(int pipe_id) {
-    unsigned int msg[] = {R_IPC_COMMAND_YES};
-    if(write(pipe_id, &msg, sizeof(unsigned int)) == -1) {
+    unsigned long msg[] = {R_IPC_COMMAND_YES};
+    if(write(pipe_id, &msg, sizeof(unsigned long)) == -1) {
         return false;
     };
-    return ipc_is_ack(msg);
+    return true;
 }
 bool ipc_send_no(int pipe_id) {
-    unsigned int msg[] = {R_IPC_COMMAND_NO};
-    if(write(pipe_id, &msg, sizeof(unsigned int)) == -1) {
+    unsigned long msg[] = {R_IPC_COMMAND_NO};
+    if(write(pipe_id, &msg, sizeof(unsigned long)) == -1) {
         return false;
     };
-    return ipc_is_ack(msg);
+    return true;
 }
-bool ipc_is_uint(unsigned int *msg) {
-    if ((*msg & R_IPC_VALUE_UINT_FLAG) == R_IPC_VALUE_UINT_FLAG)
+bool ipc_is_ulong(unsigned long msg) {
+    if ((msg & R_IPC_VALUE_UINT_FLAG) == R_IPC_VALUE_UINT_FLAG)
         return true;
     return false;
 }
-bool ipc_send_ack(int pipe_id) {
-    fprintf(stderr,"SENDING ack on %d\n", pipe_id);
-    unsigned int value = R_IPC_COMMAND_ACK;
-    if(write(pipe_id, &value, sizeof(unsigned int)) == -1) {
+bool ipc_send_ack(ipc_pipes_t *pipes) {
+    unsigned long value = R_IPC_COMMAND_ACK;
+    if(write(pipes->write, &value, sizeof(unsigned long)) == -1) {
         return false;
     };
     return true;
 }
-bool ipc_send_uint(int pipe_id, unsigned int value) {
+bool ipc_send_ulong(ipc_pipes_t *pipes, unsigned long value) {
     if (value > R_IPC_VALUE_UINT_MAX) // max value
         return false;
     
-    unsigned int msg[] = {R_IPC_VALUE_UINT_FLAG | value};
-    if(write(pipe_id, &msg, sizeof(unsigned int)) == -1) {
+    unsigned long msg[] = {R_IPC_VALUE_UINT_FLAG | value};
+    if(write(pipes->write, &msg, sizeof(unsigned long)) == -1) {
         return false;
     };
     return true;
 }
-unsigned int ipc_get_unit(int pipe_id) {
-    unsigned int *msg;
-    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+unsigned long ipc_get_ulong(ipc_pipes_t *pipes) {
+    unsigned long msg;
+    if(read(pipes->read, &msg, sizeof(unsigned long))<0)
         return R_IPC_VALUE_UINT_FLAG;
 
-    if (!ipc_is_unint(msg)) {
+    if (!ipc_is_ulong(msg)) {
         return R_IPC_VALUE_UINT_FLAG;
     } 
-    return *msg & ~R_IPC_VALUE_UINT_FLAG;
+    return msg & ~R_IPC_VALUE_UINT_FLAG;
 }
-bool ipc_get_ack(int pipe_id) {
-    fprintf(stderr,"Getting ack on %d\n", pipe_id);
-    unsigned int *msg;
-    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+bool ipc_get_ack(ipc_pipes_t *pipes) {
+    unsigned long msg;
+    if(read(pipes->read, &msg, sizeof(unsigned long))<0)
         return false;
     return ipc_is_ack(msg);
 }
 
-bool ipc_get_no(int pipe_id) {
-    unsigned int *msg;
-    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+bool ipc_get_no(ipc_pipes_t *pipes) {
+    unsigned long msg;
+    if(read(pipes->read, &msg, sizeof(unsigned long))<0)
         return false;
     return ipc_is_no(msg);
 }
-bool ipc_get_yes(int pipe_id) {
-    unsigned int *msg;
-    if(read(pipe_id, &msg, sizeof(unsigned int))<0)
+bool ipc_get_yes(ipc_pipes_t *pipes) {
+    unsigned long msg;
+    if(read(pipes->read, &msg, sizeof(unsigned long))<0)
         return false;
     return ipc_is_yes(msg);
 }
+
+int acknowledge_daemon(ipc_pipes_t *pipes)
+{
+    if (!ipc_send_ack(pipes))
+    {
+        syslog(LOG_ERR, "Failed to send ack to daemon.");
+        return D_FAILURE;
+    }
+    if (!ipc_get_ack(pipes))
+    {
+        syslog(LOG_ERR, "Failed to get ack from daemon.");
+        return D_FAILURE;
+    }
+
+    return D_SUCCESS;
+}
+
 
 unsigned short __parse_short_arg(char * input) {
     char *endptr;
@@ -300,12 +321,10 @@ int get_hh_mm_str(const char * input_HH_MM,time_t * next_time) {
     unsigned short target_hour;
     unsigned short target_minute;
     if( sscanf(input_HH_MM, "%hu:%hu", &target_hour, &target_minute) != 2) {
-        fprintf(stderr,"Invalid time format: %s, should be HH:MM fromat", input_HH_MM);
         return(D_INVALID_HH_MM_FORMAT);
     }
 
     if (target_hour > 23 || target_minute > 59) {
-        fprintf(stderr, "Invalid time. Ensure the hour is between 0-23 and minutes are between 0-59.\n");
         return(D_INVALID_HH_MM_RANGE);
     }
 
@@ -320,4 +339,135 @@ int get_hh_mm_str(const char * input_HH_MM,time_t * next_time) {
     }
     *next_time = mktime(next_target);
     return(D_SUCCESS);
+}
+
+/// @brief Creates a child process, mirrors new process and returns communication pipe ids
+/// @param executable
+/// @param extra_args
+/// @param write_fd
+/// @param read_fd
+/// @return pid of child
+pid_t start_child_process(const char *executable, const char *extra_args[], ipc_pipes_t *pipes, int d_socket)
+{
+    static int child_pipes[2];
+    static int parent_pipes[2];
+
+    if (__initialize_pipes(parent_pipes, child_pipes) == D_FAILURE)
+    {
+        return D_FAILURE;
+    };
+
+    pid_t fork_pid = fork();
+    if (fork_pid == D_FAILURE)
+    {
+        syslog(LOG_ERR, "reportman could not spawn %s child: %s", executable, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    else if (fork_pid == D_SUCCESS)
+    { // is child
+        close(d_socket);
+        close(parent_pipes[1]);
+        close(child_pipes[0]);
+
+        // egregiously sized but cleared on execl maybe?
+        char parent_to_child_read_pipe[COMMUNICATION_BUFFER_SIZE];
+        char child_to_parent_write_pipe[COMMUNICATION_BUFFER_SIZE];
+
+        snprintf(parent_to_child_read_pipe, sizeof(parent_to_child_read_pipe), "%d", parent_pipes[0]);
+        snprintf(child_to_parent_write_pipe, sizeof(child_to_parent_write_pipe), "%d", child_pipes[1]);
+
+        int arg_count=0;
+        if (extra_args != NULL) {
+            for (arg_count = 0; extra_args[arg_count] != NULL; ++arg_count)
+            {
+                if (arg_count > D_MAX_INTERPROCESS_ARGUMENTS)
+                {
+                    syslog(LOG_ERR, "Too many arguments passed to child process, or we are missing the NULL array terminator.");
+                    exit(EXIT_FAILURE);
+                }
+            }
+        }
+
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wcast-qual"
+        const int fixed_args = 6;
+        const char *args[arg_count + fixed_args]; // Extra space for fixed arguments and NULL terminator
+        args[0] = executable;                     // First arg is the name of the program
+        args[1] = "--from-daemon";
+        args[2] = "--d-to-c";
+        args[3] = parent_to_child_read_pipe;
+        args[4] = "--c-to-d";
+        args[5] = child_to_parent_write_pipe;
+
+        for (int i = 0; i < arg_count; i++)
+        {
+            args[i + fixed_args] = (char *)(extra_args[i]);
+        }
+
+        args[arg_count + fixed_args] = NULL;
+
+        execv(executable, (char *const *)args);
+
+        #pragma GCC diagnostic pop
+
+        int err = errno;
+
+        syslog(LOG_ERR, "execv FAILED to overlay %s", strerror(err));
+
+        if (err == 2)
+        {
+            syslog(LOG_ERR, "Could not find %s executable. Please ensure it is executable from call location.", executable);
+        }
+
+        exit(EXIT_FAILURE);
+    }
+    close(parent_pipes[0]);
+    close(child_pipes[1]);
+
+    pipes->write = parent_pipes[1];
+    pipes->read = child_pipes[0];
+
+    syslog(LOG_DEBUG, "%s child spawned with PID: %d", executable, fork_pid);
+    return fork_pid;
+}
+
+static int __initialize_pipes(int daemon_pipes[2], int child_pipes[2])
+{
+    if ((pipe(child_pipes) == -1) || (pipe(daemon_pipes) == -1))
+    {
+        syslog(LOG_ERR, "Could not create pipes: %s", strerror(errno));
+        return D_FAILURE;
+    }
+    return D_SUCCESS;
+}
+
+
+int r_initialize_signals(void)
+{
+    int signal_fd;
+    sigset_t sigmask;
+
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGINT);
+    sigaddset(&sigmask, SIGTERM);
+
+    if (sigprocmask(SIG_BLOCK, &sigmask, NULL) < 0)
+    {
+        syslog(LOG_ERR,
+               "Couldn't block signals: '%s'\n",
+               strerror(errno));
+        return -1;
+    }
+
+    // get new file descriptor for signals
+    if ((signal_fd = signalfd(-1, &sigmask, 0)) < 0)
+    {
+        syslog(LOG_ERR,
+               "Couldn't setup signal FD: '%s'\n",
+               strerror(errno));
+        return -1;
+    }
+    // signal(SIGINT, __clean_close);
+    // signal(SIGTERM, __clean_close);
+    return signal_fd;
 }

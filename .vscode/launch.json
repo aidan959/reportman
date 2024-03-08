@@ -5,14 +5,41 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "C Compile Launch & Debug ",
+            "name": "C Run daemon ",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/reportmand",
             "args": ["--no-daemon", "-f"],
             "stopAtEntry": false,
             // TODO USE "environment": [{ "name": "config", "value": "Debug" }],
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/bin",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor amd",
+                    "ignoreFailures": true
+                }
+            ],
+            //"preLaunchTask": "daemon build file",
+            "MIMode" : "gdb",
+            "miDebuggerPath": "/usr/sbin/gdb",
+            "externalConsole": false
+        
+          },
+          {
+            "name": "reportman_mon from daemon",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/reportman_mon",
+            "args": ["-fd", "--d-to-c", "1", "--c-to-d", "1"],
+            "stopAtEntry": false,
+            // TODO USE "environment": [{ "name": "config", "value": "Debug" }],
+            "cwd": "${workspaceFolder}/bin",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",

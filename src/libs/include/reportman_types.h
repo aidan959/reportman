@@ -20,6 +20,11 @@ typedef struct
     int wd;
 } dir_monitored_t;
 
+typedef struct
+{
+    int write;
+    int read;
+} ipc_pipes_t;
 
 typedef struct
 {
@@ -34,18 +39,26 @@ typedef struct
     bool log_to_sys;
     bool log_to_file;
     bool log_to_stdout;
-
 } monitor_conf_t;
 
 typedef struct
 {
     bool from_daemon;
-    int daemon_to_fm_read_id;
-    int fm_to_daemon_write_id;
     const char * const * dirs;
     size_t no_dirs;
     monitor_conf_t conf;
+    ipc_pipes_t pipes;
 } monitor_args_t;
+
+typedef struct 
+{
+    bool from_daemon;
+    time_t backup_time;
+    time_t transfer_time;
+    bool do_backup;
+    bool do_transfer;
+    ipc_pipes_t pipes;
+} reportman_fm_args_t;
 
 typedef enum {
     C_BACKUP,

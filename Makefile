@@ -14,7 +14,7 @@ NAME=reportman
 
 DAEMON=$(NAME)d
 CLIENT=$(NAME)c
-MONITOR=$(NAME)_monitor
+MONITOR=$(NAME)_mon
 FM=$(NAME)_fm
 
 LOG_DIR=/var/log/$(NAME)
@@ -36,25 +36,22 @@ CLIENT_BIN=$(BIN)/$(CLIENT)
 MONITOR_BIN=$(BIN)/$(MONITOR)
 FM_BIN=$(BIN)/$(FM)
 
-EXECUTABLES = $(DAEMON_BIN) $(CLIENT_BIN) $(MONITOR_BIN) $(FM_BIN)
+EXECUTABLES_BIN = $(DAEMON_BIN) $(CLIENT_BIN) $(MONITOR_BIN) $(FM_BIN)
 
 OBJECTS_C := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_C))) $(OBJ)/$(CLIENT).o
 OBJECTS_D := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_D))) $(OBJ)/$(DAEMON).o
 OBJECTS_MON := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_MON))) $(OBJ)/$(MONITOR).o
 OBJECTS_FM := $(filter-out $(EXECUTABLES_OBJ),$(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES_FM))) $(OBJ)/$(FM).o
 
-all: $(EXECUTABLES)
+all: $(EXECUTABLES_BIN)
 
 force: clean all
-
 debug: CFLAGS += -g
 debug: force
 
 # DAEMON MAKE TARGETS
 $(DAEMON_BIN): $(OBJECTS_D)
 	@mkdir -p $(@D)
-	@echo $(CC) $^ -o $@ $(LIBS)
-
 	$(CC) $^ -o $@ $(LIBS)
 
 $(OBJ)/$(DAEMON).o: $(SRC)/$(DAEMON).c
@@ -100,21 +97,21 @@ install: $(DAEMON_BIN) | $(CLIENT_BIN)
 		$(warning  This script must be run as root to install to $(SBIN), and add service to systemctl)echo;\
 	fi
 	@sudo mkdir -p $(LOG_DIR)
+
 	@sudo mkdir -p /srv/$(NAME)
 
 	
 	@sudo groupadd afnbadmin || true
 	@sudo useradd $(NAME) -s /sbin/nologin -r -M -d / || true
-	@echo "sudo chown -R $(NAME):afnbadmin /srv/$(NAME)"
 	@sudo chown -R $(NAME):afnbadmin $(LOG_DIR)
 	@sudo chown -R $(NAME):afnbadmin /srv/$(NAME)
 
-	@sudo chmod 640 $(LOG_DIR)
+	@sudo chmod 751 $(LOG_DIR)
 
-	install -o $(NAME) -m 754 $(DAEMON_BIN) $(SBIN)
-	install -o $(NAME) -m 755 $(CLIENT_BIN) $(USRBIN)
-	install -o $(NAME) -m 755 $(MONITOR_BIN) $(USRBIN)
-	install -o $(NAME) -m 755 $(FM_BIN) $(USRBIN)
+	install -o $(NAME) -m 554 $(DAEMON_BIN) $(SBIN)
+	install -o $(NAME) -m 555 $(CLIENT_BIN) $(USRBIN)
+	install -o $(NAME) -m 555 $(MONITOR_BIN) $(USRBIN)
+	install -o $(NAME) -m 555 $(FM_BIN) $(USRBIN)
 
 	cp $(NAME).service /etc/systemd/system/
 

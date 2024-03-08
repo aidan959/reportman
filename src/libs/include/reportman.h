@@ -38,17 +38,19 @@
 #define R_PARSE_NO_MATCH 0
 #define R_PARSE_NO_VALUE -1
 
-#define M_LOG_PATH "/var/log/reportmand/monitor.log"
+#define M_LOG_PATH "/var/log/reportman/monitor.log"
 
 #define R_REPORTS_DIRECTORY "/srv/reportman/reports"
 #define R_BACKUP_DIRECTORY "/srv/reportman/backup"
 #define R_DASHBOARD_DIRECTORY "/srv/reportman/dashboard"
+#include <sys/types.h>
 
 #include <stdbool.h>
 #define false 0
 #define true 1
 
 #include "reportman_types.h"
+pid_t start_child_process(const char *executable, const char *extra_args[], ipc_pipes_t * pipes, int d_socket);
 
 void configure_daemon_args(int argc, char *argv[], daemon_arguments_t *args);
 void configure_client_args(int argc, char *argv[], client_arguments_t *args);
@@ -61,25 +63,30 @@ int arg_parse_int(int argc, char *argv[], int *argi, const char * short_name, co
 int arg_parse_bool(int argc, char *argv[], int *argi, const char * short_name, const char * long_name,const char * value_name, bool *output);
 int arg_unrecognised(char * arg);
 unsigned short __parse_short_arg(char * input);
+
 unsigned int __parse_unsigned_int_arg(char * input);
 
 int parse_command(char *command, command_response_t * response) ;
 int main(int argc, char *argv[]);
 
-bool ipc_is_command(unsigned int *msg);
-bool ipc_is_ack(unsigned int *msg);
-bool ipc_is_yes(unsigned int *msg);
-bool ipc_is_no(unsigned int *msg);
-bool ipc_is_uint(unsigned int *msg);
+bool ipc_is_command(unsigned long msg);
+bool ipc_is_ack(unsigned long msg);
+bool ipc_is_yes(unsigned long msg);
+bool ipc_is_no(unsigned long msg);
+bool ipc_is_ulong(unsigned long msg);
 
-int ipc_send_command(unsigned int *msg, command_t command);
-bool ipc_send_uint(int pipe_id, unsigned int value);
-bool ipc_send_ack(int pipe_id);
+int ipc_send_command(unsigned long *msg, command_t command);
 
-bool ipc_get_ack(int pipe_id);
-bool ipc_get_ack(int pipe_id);
-unsigned int ipc_get_unit(int pipe_id);
+bool ipc_send_ulong(ipc_pipes_t *pipes, unsigned long value);
+bool ipc_send_ack(ipc_pipes_t *pipes);
+
+bool ipc_get_ack(ipc_pipes_t *pipes);
+unsigned long ipc_get_ulong(ipc_pipes_t *pipes);
+int acknowledge_daemon(ipc_pipes_t *pipes);
 
 int get_hh_mm_str(const char *input_HH_MM, time_t *next_time);
+
+int r_initialize_signals(void);
+
 
 #endif

@@ -21,7 +21,7 @@
 #include "libs/include/reportman.h"
 #include "include/reportmand.h"
 
-static int __wait_for_reportman_fm(void);
+static int __reportman_fm_get_timers(ipc_pipes_t *pipes);
 char *__save_pipe_buffer(FILE *fp);
 void __free_running_pids(running_pid_t *pid, unsigned long num_pids);
 running_pid_t *__parse_lsof_line(char *line);
@@ -35,14 +35,12 @@ static void __kill_pid(int pid);
 static int __force_singleton(int singleton_result, unsigned short port);
 static int __is_daemon(void);
 static void __become_daemon(void);
-static int __initialize_pipes(int daemon_pipes[2], int child_pipes[2]);
 static int __get_path(const char *input_path, char *output_path);
 static bool __is_path_empty(const char path[PATH_MAX]);
 static bool __has_path_parent(const char *path);
 static bool __has_write_permission_to_parent(const char path[PATH_MAX]);
 static bool __expand_path_to_absolute(const char path[PATH_MAX], char output_path[PATH_MAX]);
 static bool __remove_last_item_path(const char path[PATH_MAX], char directory[PATH_MAX], char item[PATH_MAX]);
-static pid_t __start_child_process(const char *executable, const char *extra_args[], int *write_fd, int *read_fd);
 static void __acquire_singleton(void);
 static void __init_directories(void);
 
@@ -53,11 +51,7 @@ const char DASHBOARD_DIRECTORY[] = R_DASHBOARD_DIRECTORY;
 static timer_t __transfer_timer;
 static timer_t __backup_timer;
 
-static int __daemon_to_fm_write;
-static int __fm_to_daemon_read;
 
-static int __daemon_to_monitor_write;
-static int __monitor_to_daemon_read;
 
 static bool __client_request_close = false;
 
@@ -73,7 +67,7 @@ static daemon_arguments_t __exec_args = {
     .log_to_sys = false,
     .log_to_file = true,
     .monitor_log_file_path = M_LOG_PATH,
-    .monitor_log_sys_name = "reportman_monitor"};
+    .monitor_log_sys_name = "reportman_mon"};
 
 static const char *__directories[] = {
     REPORTS_DIRECTORY,
@@ -92,14 +86,16 @@ int main(int argc, char *argv[])
 
     __init_directories();
 
-    pid_t reportman_fm_pid = __start_child_process("reportman_fm", __directories, &__daemon_to_fm_write, &__fm_to_daemon_read);
+    ipc_pipes_t fm_pipes;
+    pid_t reportman_fm_pid = start_child_process("reportman_fm", NULL, &fm_pipes, d_socket);
     syslog(LOG_DEBUG, "reportman_fd running as child (%d)", reportman_fm_pid);
+    acknowledge_client(&fm_pipes);
+    __reportman_fm_get_timers(&fm_pipes);
 
-    __wait_for_reportman_fm();
-
-    pid_t reportman_mon_pid = __start_child_process("reportman_monitor", __directories, &__daemon_to_monitor_write, &__monitor_to_daemon_read);
-
-    syslog(LOG_DEBUG, "reportman_monitor running as child (%d)", reportman_mon_pid);
+    ipc_pipes_t mon_pipes;
+    pid_t reportman_mon_pid = start_child_process("reportman_mon", __directories, &mon_pipes, d_socket);
+    syslog(LOG_DEBUG, "reportman_mon running as child (%d)", reportman_mon_pid);
+    acknowledge_client(&mon_pipes);
 
     // blocks to go to main loop
     int exit_code = __listen_to_clients();
@@ -544,7 +540,7 @@ static int __is_daemon(void)
 
 /// @brief Waits for reportman_fm to send timer data
 /// @return returns success of function
-static int __wait_for_reportman_fm(void)
+static int __reportman_fm_get_timers(ipc_pipes_t *pipes)
 {
     struct timeval timeout;
 
@@ -552,154 +548,81 @@ static int __wait_for_reportman_fm(void)
     timeout.tv_sec = timeout_secs;
     timeout.tv_usec = 0;
 
-    bool finish = false;
+    fd_set set;
 
-    while (!finish)
+    // Initialize the file descriptor set
+    FD_ZERO(&set);
+    FD_SET(pipes->read, &set);
+
+    int read_fm = select(pipes->read + 1, &set, NULL, NULL, &timeout);
+
+    if (read_fm == D_FAILURE)
     {
-        fd_set set;
-
-        // Initialize the file descriptor set
-        FD_ZERO(&set);
-        FD_SET(__fm_to_daemon_read, &set);
-
-        int read_fm = select(__fm_to_daemon_read + 1, &set, NULL, NULL, &timeout);
-
-        if (read_fm == D_FAILURE)
-        {
-            syslog(LOG_ERR, "select could not block: %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        else if (read_fm == 0)
-        {
-            syslog(LOG_ERR, "reportman_fm did not respond after %lds, exiting...: %s", timeout_secs, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        if (FD_ISSET(__fm_to_daemon_read, &set)) {
-            if (ipc_get_ack(__fm_to_daemon_read))
-            {
-                fprintf(stderr, "Successfully received Ack\n");
-            }
-            else
-            {
-                syslog(LOG_ERR, "reportman_fm dud not send IPC ACK exiting...: %s", strerror(errno));
-                exit(EXIT_FAILURE);
-            }
-            if (ipc_send_ack(__daemon_to_fm_write))
-            {
-                fprintf(stderr, "Successfully sent Ack\n");
-            }
-            else
-            {
-                syslog(LOG_ERR, "reportman could not send IPC ACK exiting...: %s", strerror(errno));
-                exit(EXIT_FAILURE);
-            }
-
-        }
-        
-        exit(EXIT_SUCCESS);
-        if (read(__fm_to_daemon_read, &__transfer_timer, sizeof(__transfer_timer)) <= 0)
-        {
-            syslog(LOG_ERR, "reportman_fm could not receive transfer timer...: %s", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        syslog(LOG_DEBUG, "Backup_timer_id: %p\tTransfer_timer_id: %p\n", __backup_timer, __transfer_timer);
-        finish = true;
+        syslog(LOG_ERR, "select could not block: %s", strerror(errno));
+        exit(EXIT_FAILURE);
     }
+    else if (read_fm == 0)
+    {
+        syslog(LOG_ERR, "reportman_fm did not respond after %lds, exiting...: %s", timeout_secs, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    if (FD_ISSET(pipes->read, &set)) {
+        unsigned long temp_timer = ipc_get_ulong(pipes);
+        if (temp_timer != R_IPC_VALUE_UINT_FLAG) {
+            __backup_timer = (timer_t)temp_timer;
+        } else {
+            syslog(LOG_ERR, "reportman_fm did not send backup timer, exiting...: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        temp_timer = ipc_get_ulong(pipes);
+        if (temp_timer != R_IPC_VALUE_UINT_FLAG) {
+            __transfer_timer = (timer_t)temp_timer;
+        } else {
+            syslog(LOG_ERR, "reportman_fm did not send backup timer, exiting...: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    }
+    syslog(LOG_DEBUG, "Backup_timer_id: %p\tTransfer_timer_id: %p\n", __backup_timer, __transfer_timer);
+
     return D_SUCCESS;
 }
 
-/// @brief Creates a child process, mirrors new process and returns communication pipe ids
-/// @param executable
-/// @param extra_args
-/// @param write_fd
-/// @param read_fd
-/// @return pid of child
-static pid_t __start_child_process(const char *executable, const char *extra_args[], int *write_fd, int *read_fd)
-{
-    static int child_pipes[2];
-    static int parent_pipes[2];
+/// @brief Acknowledges client connection.
+/// @param pipes 
+/// @return Success 
+int acknowledge_client(ipc_pipes_t *pipes){
+    struct timeval timeout;
 
-    if (__initialize_pipes(parent_pipes, child_pipes) == D_FAILURE)
-    {
-        return D_FAILURE;
-    };
+    time_t timeout_secs = 10;
+    timeout.tv_sec = timeout_secs;
+    timeout.tv_usec = 0;
 
-    pid_t fork_pid = fork();
-    if (fork_pid == D_FAILURE)
+    fd_set set;
+    // Initialize file descriptor set
+    FD_ZERO(&set);
+    FD_SET(pipes->read, &set);
+
+    int read_fm = select(pipes->read + 1, &set, NULL, NULL, &timeout);
+
+    if (read_fm == D_FAILURE)
     {
-        syslog(LOG_ERR, "reportman could not spawn %s child: %s", executable, strerror(errno));
+        syslog(LOG_ERR, "select could not block: %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
-    else if (fork_pid == D_SUCCESS)
-    { // is child
-        close(d_socket);
-        close(parent_pipes[1]);
-        close(child_pipes[0]);
-
-        // egregiously sized but cleared on execl maybe?
-        char parent_to_child_read_pipe[COMMUNICATION_BUFFER_SIZE];
-        char child_to_parent_write_pipe[COMMUNICATION_BUFFER_SIZE];
-
-        snprintf(parent_to_child_read_pipe, sizeof(parent_to_child_read_pipe), "%d", parent_pipes[0]);
-        snprintf(child_to_parent_write_pipe, sizeof(child_to_parent_write_pipe), "%d", child_pipes[1]);
-
-        int arg_count;
-        for (arg_count = 0; extra_args[arg_count] != NULL; ++arg_count)
-        {
-            if (arg_count > D_MAX_INTERPROCESS_ARGUMENTS)
-            {
-                syslog(LOG_ERR, "Too many arguments passed to child process, or we are missing the NULL array terminator.");
-                exit(EXIT_FAILURE);
-            }
-        }
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-qual"
-        const int fixed_args = 6;
-        const char *args[arg_count + fixed_args]; // Extra space for fixed arguments and NULL terminator
-        args[0] = executable;                     // First arg is the name of the program
-        args[1] = "--from-daemon";
-        args[2] = "--d-to-c";
-        args[3] = parent_to_child_read_pipe;
-        args[4] = "--c-to-d";
-        args[5] = child_to_parent_write_pipe;
-
-        for (int i = 0; i < arg_count; i++)
-        {
-            args[i + fixed_args] = (char *)(extra_args[i]);
-        }
-
-        args[arg_count + fixed_args] = NULL;
-
-        execv(executable, (char *const *)args);
-
-#pragma GCC diagnostic pop
-
-        int err = errno;
-
-        syslog(LOG_ERR, "execl FAILED to overlay %s %d", strerror(err), err);
-
-        if (err == 2)
-        {
-            syslog(LOG_ERR, "Could not find reportman_monitor executable. Please ensure it is executable from call location.");
-        }
-
+    else if (read_fm == 0)
+    {
+        syslog(LOG_ERR, "Child did not respond after %lds, exiting...: %s", timeout_secs, strerror(errno));
         exit(EXIT_FAILURE);
     }
-    close(parent_pipes[0]);
-    close(child_pipes[1]);
-
-    *write_fd = parent_pipes[1];
-    *read_fd = child_pipes[0];
-
-    syslog(LOG_DEBUG, "%s child spawned with PID: %d", executable, fork_pid);
-    return fork_pid;
-}
-static int __initialize_pipes(int daemon_pipes[2], int child_pipes[2])
-{
-    if ((pipe(child_pipes) == -1) || (pipe(daemon_pipes) == -1))
-    {
-        syslog(LOG_ERR, "Could not create pipes: %s", strerror(errno));
-        return D_FAILURE;
+    if (FD_ISSET(pipes->read, &set)) {
+        if (!ipc_get_ack(pipes)){
+            syslog(LOG_ERR, "Child did not send IPC ACK exiting...: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        if (!ipc_send_ack(pipes)){
+            syslog(LOG_ERR, "Child could not send IPC ACK exiting...: %s", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
     }
     return D_SUCCESS;
 }
@@ -878,3 +801,5 @@ static bool __remove_last_item_path(const char path[PATH_MAX], char directory[PA
     fprintf(stderr, "%s", item);
     return true;
 }
+
+

@@ -45,9 +45,12 @@
         "type_traits": "c",
         "daemonize.h": "c",
         "reportman.h": "c",
-        "reportman_monitor.h": "c",
+        "reportman_mon.h": "c",
         "monitor_tool.h": "c",
-        "reportman_fm.h": "c"
+        "reportman_fm.h": "c",
+        "sigaction.h": "c",
+        "limits.h": "c",
+        "directory_tool.h": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/sbin/gcc",
     "C_Cpp.errorSquiggles": "enabled"
