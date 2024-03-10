@@ -78,7 +78,10 @@ static int __started_from_daemon(void)
     if(!__fm_args.debug)__report_to_daemon();
 
     int signal_fd;
-    struct pollfd fds[FM_FD_POLL_MAX];
+    int max_fds = FM_FD_POLL_MAX;
+    if (__fm_args.debug) max_fds--;
+    struct pollfd fds[max_fds];
+        
     if ((signal_fd = r_initialize_signals()) < 0)
     {
         syslog(LOG_ALERT, "Could not initialize signals");
@@ -87,8 +90,11 @@ static int __started_from_daemon(void)
     // enable polling
     fds[FM_FD_POLL_SIGNAL].fd = signal_fd;
     fds[FM_FD_POLL_SIGNAL].events = POLLIN;
-    fds[FM_FD_POLL_PARENT].fd = __fm_args.pipes.read;
-    fds[FM_FD_POLL_PARENT].events = POLLIN;
+    if(__fm_args.debug){
+    } else {
+        fds[FM_FD_POLL_PARENT].fd = __fm_args.pipes.read;
+        fds[FM_FD_POLL_PARENT].events = POLLIN;
+    }
     nfds_t poll_count;
     if(__fm_args.pipes.read > 0)
         poll_count = (nfds_t)FM_FD_POLL_MAX;
@@ -104,7 +110,7 @@ static int __started_from_daemon(void)
                    strerror(errno));
             exit(EXIT_FAILURE);
         }
-        if(fds[FM_FD_POLL_PARENT].revents & POLLIN)
+        if(!__fm_args.debug && fds[FM_FD_POLL_PARENT].revents & POLLIN)
         {
             IPC_COMMANDS command;
             if(!ipc_get_command(&__fm_args.pipes, &command)) {
@@ -129,7 +135,7 @@ static int __started_from_daemon(void)
             };
 
         }
-        if (fds[FM_FD_POLL_SIGNAL].revents & POLLIN)
+        if ( fds[FM_FD_POLL_SIGNAL].revents & POLLIN)
         {
             struct signalfd_siginfo fdsi;
 
@@ -155,6 +161,7 @@ static int __started_from_daemon(void)
         }
 
     }
+    syslog(LOG_ALERT, "Exiting reportman_fm");
     __shutdown_signals(signal_fd, &__fm_args.pipes);
     exit(EXIT_SUCCESS);
 }
