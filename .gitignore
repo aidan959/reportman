@@ -1,6 +1,7 @@
 examples/
 *.out
 *.o
+log
 bin
 obj
 sample/

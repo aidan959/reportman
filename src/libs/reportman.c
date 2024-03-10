@@ -113,19 +113,32 @@ unsigned long ipc_get_ulong(ipc_pipes_t *pipes) {
     } 
     return msg & ~R_IPC_VALUE_UINT_FLAG;
 }
-bool ipc_send_command(ipc_pipes_t *pipes, IPC_COMMANDS  command) {
+
+bool ipc_send_command(ipc_pipes_t *pipes, IPC_COMMANDS command) {
+    if (pipes->read < 0 && pipes->write < 0) return false;
     unsigned long value = command;
     if(write(pipes->write, &value, sizeof(unsigned long)) == -1) {
         return false;
     };
     return true;
 }
-bool ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS *command) {
+bool ipc_send_panic(ipc_pipes_t *pipes, const char* log, bool * panic) {
+    syslog(LOG_ERR, log);
+    *panic = true;
+
+    return ipc_send_command(pipes, IPC_COMMAND_PANIC);
+}
+/// @brief Get command from pipes
+/// @param pipes 
+/// @param command 
+/// @param timeout_secs 
+/// @return Bool or negative value
+int ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS *command, time_t timeout_secs) {
     fd_set readfds;
     FD_ZERO(&readfds);
     FD_SET(pipes->read, &readfds);
     struct timeval timeout;
-    timeout.tv_sec = R_IPC_TIMEOUT;
+    timeout.tv_sec = timeout_secs;
     timeout.tv_usec = 0;
         // Set up an alarm for the timeout
     int ret = select(pipes->read + 1, &readfds, NULL, NULL, &timeout);
@@ -133,8 +146,8 @@ bool ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS *command) {
         syslog(LOG_ERR, "Error in select: %s", strerror(errno));
         return false;
     } else if(ret == 0) {
-        syslog(LOG_ERR, "Timeout in select");
-        return false;
+        syslog(LOG_DEBUG, "Select timed out : %s", strerror(errno));
+        return IPC_TIMEOUT_ERR;
     } else {
         unsigned long msg;
         if(read(pipes->read, &msg, sizeof(unsigned long))<0)
@@ -145,6 +158,9 @@ bool ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS *command) {
         return true;
     }
 }
+/// @brief Gets acknowledgement from pipes
+/// @param pipes 
+/// @return 
 bool ipc_get_ack(ipc_pipes_t *pipes) {
     unsigned long msg;
     if(read(pipes->read, &msg, sizeof(unsigned long))<0)
@@ -421,12 +437,11 @@ int get_hh_mm_str(const char * input_HH_MM,time_t * next_time) {
     return(D_SUCCESS);
 }
 
-/// @brief Creates a child process, mirrors new process and returns communication pipe ids
-/// @param executable
-/// @param extra_args
-/// @param child_process empty child process struct
-/// @param d_socket connection socket
-/// @return pid of child
+/// @brief Starts a child process with arguments -
+/// @param child_process <- process struct to start
+/// @param extra_args <- list of directories 
+/// @param d_socket <- parent socket
+/// @return 
 int start_child_process(child_process_t *child_process, const char *extra_args[], int d_socket)
 {
     static int child_pipes[2];
@@ -509,7 +524,8 @@ int start_child_process(child_process_t *child_process, const char *extra_args[]
 
     syslog(LOG_DEBUG, "%s child spawned with PID: %d", child_process->executable, fork_pid);
     child_process->pid = fork_pid;
-    return fork_pid;
+    child_process->is_alive = true;
+    return child_process->pid;
 }
 
 static int __initialize_pipes(int daemon_pipes[2], int child_pipes[2])

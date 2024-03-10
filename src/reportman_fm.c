@@ -56,6 +56,7 @@ int main(int argc, char **argv)
 /// @return Discardable
 static int __started_from_daemon(void)
 {
+
     if (!__fm_args.from_daemon)
     {
         openlog("reportman_fm", LOG_PID, LOG_USER);
@@ -76,33 +77,32 @@ static int __started_from_daemon(void)
 
     if(!__fm_args.debug) acknowledge_daemon(&__fm_args.pipes);
     if(!__fm_args.debug)__report_to_daemon();
-
+    bool panic = false; 
     int signal_fd;
     int max_fds = FM_FD_POLL_MAX;
     if (__fm_args.debug) max_fds--;
     struct pollfd fds[max_fds];
         
     if ((signal_fd = r_initialize_signals()) < 0)
-    {
-        syslog(LOG_ALERT, "Could not initialize signals");
-        exit(EXIT_FAILURE);
-    }
+        ipc_send_panic(&__fm_args.pipes, "Could not initialize signals", &panic);
+    
     // enable polling
     fds[FM_FD_POLL_SIGNAL].fd = signal_fd;
     fds[FM_FD_POLL_SIGNAL].events = POLLIN;
-    if(__fm_args.debug){
-    } else {
-        fds[FM_FD_POLL_PARENT].fd = __fm_args.pipes.read;
-        fds[FM_FD_POLL_PARENT].events = POLLIN;
-    }
+
+    fds[FM_FD_POLL_PARENT].fd = __fm_args.pipes.read;
+    fds[FM_FD_POLL_PARENT].events = POLLIN;
+    
     nfds_t poll_count;
     if(__fm_args.pipes.read > 0)
         poll_count = (nfds_t)FM_FD_POLL_MAX;
+    else if(panic)
+        poll_count = 1;
     else
         poll_count = (nfds_t)FM_FD_POLL_MAX - 1; 
     for (;;)
     {
-        // blocks to read for parent / signals
+
         if (poll(fds, poll_count, -1) < 0)
         {
             syslog(LOG_ERR,
@@ -113,7 +113,7 @@ static int __started_from_daemon(void)
         if(!__fm_args.debug && fds[FM_FD_POLL_PARENT].revents & POLLIN)
         {
             IPC_COMMANDS command;
-            if(!ipc_get_command(&__fm_args.pipes, &command)) {
+            if(!ipc_get_command(&__fm_args.pipes, &command, R_IPC_TIMEOUT)) {
                 syslog(LOG_ERR, "Unexpected error reading command from daemon.");
             }
             else
@@ -125,6 +125,9 @@ static int __started_from_daemon(void)
                     };
 
                     break;
+                case IPC_COMMAND_PANIC:
+                    syslog(LOG_NOTICE, "IPC_COMMAND_PANIC received.");
+                    exit(EXIT_FAILURE);
                 case IPC_COMMAND_NO:
                 case IPC_COMMAND_YES:
                 case IPC_COMMAND_ACK:

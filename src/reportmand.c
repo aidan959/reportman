@@ -25,9 +25,7 @@
 #include "libs/include/reportman.h"
 #include "include/reportmand.h"
 
-
-
-static int __reportman_fm_get_timers(ipc_pipes_t *pipes);
+static int __reportman_fm_get_timers(child_process_t *process);
 char *__save_pipe_buffer(FILE *fp);
 void __free_running_pids(running_pid_t *pid, unsigned long num_pids);
 running_pid_t *__parse_lsof_line(char *line);
@@ -36,7 +34,7 @@ static void __configure_daemon_args(int argc, char *argv[], daemon_arguments_t *
 static void __child_spawn(child_process_t *child, const char **extra_args);
 
 int __get_other_pid(unsigned short singleton_port);
-static void __clean_close(int signal_fd, int timerfd, timer_t timerid);
+static void __clean_close(int signal_fd, int timerfd, timer_t timerid, int exit_code);
 static void __handle_command(char *command, unsigned long long int client_idk, command_response_t *response);
 static int __listen_to_clients(void);
 static void __kill_pid(int pid);
@@ -51,8 +49,8 @@ static bool __expand_path_to_absolute(const char path[PATH_MAX], char output_pat
 static bool __remove_last_item_path(const char path[PATH_MAX], char directory[PATH_MAX], char item[PATH_MAX]);
 static void __acquire_singleton(void);
 static void __init_directories(void);
-static void __kill_children(void);
-
+static int __kill_children(void);
+static int __health_probe_child_process(child_process_t *child, int (*post_proc_launch)(child_process_t *));
 void __handle_sigpipe(int sig);
 
 const char REPORTS_DIRECTORY[] = R_REPORTS_DIRECTORY;
@@ -70,8 +68,7 @@ static child_process_t __fm_process = {
     .pid = -1,
     .max_retries = 3,
     .retries = 0,
-    .executable = "reportman_fm"
-};
+    .executable = "reportman_fm"};
 static child_process_t __mon_process = {
     .pipes = {
         .read = -1,
@@ -79,10 +76,9 @@ static child_process_t __mon_process = {
     .pid = -1,
     .max_retries = 3,
     .retries = 0,
-    .executable = "reportman_mon"
-};
+    .executable = "reportman_mon"};
 
-static child_process_t * __current_process = NULL;
+static child_process_t *__current_process = NULL;
 
 int d_socket;
 
@@ -101,8 +97,7 @@ static daemon_arguments_t __exec_args = {
 static const char *__directories[] = {
     REPORTS_DIRECTORY,
     BACKUP_DIRECTORY,
-    DASHBOARD_DIRECTORY
-};
+    DASHBOARD_DIRECTORY};
 int main(int argc, char *argv[])
 {
     __configure_daemon_args(argc, argv, &__exec_args);
@@ -113,7 +108,7 @@ int main(int argc, char *argv[])
     __init_directories();
 
     __child_spawn(&__fm_process, NULL);
-    __reportman_fm_get_timers(&__fm_process.pipes);
+    __reportman_fm_get_timers(&__fm_process);
 
     __child_spawn(&__mon_process, __directories);
 
@@ -126,7 +121,7 @@ int main(int argc, char *argv[])
     return exit_code;
 }
 /// @brief Initializes relevant directories // TODO should pull from file
-/// @param  
+/// @param
 static void __init_directories(void)
 {
     if (init_directories(sizeof(__directories) / sizeof(char *), __directories))
@@ -191,7 +186,7 @@ static void __become_daemon(void)
 // ! REALLY REALLY IMPORTANT THAT EXECUTION HERE IS FULLY CONTROLLED
 // TODO ABSTRACT THE METHODS HERE
 /// @brief Listens to client and child processes
-/// @param  
+/// @param
 /// @return Should exit
 static int __listen_to_clients(void)
 {
@@ -200,16 +195,20 @@ static int __listen_to_clients(void)
     timer_t timerid;
     struct sigevent sev;
     struct itimerspec its;
+    IPC_COMMANDS command;
+
     sev.sigev_notify = SIGEV_NONE; // Don't deliver a signal
     sev.sigev_value.sival_ptr = &timerid;
-    if (timer_create(CLOCK_MONOTONIC, &sev, &timerid) == -1) {
+    if (timer_create(CLOCK_MONOTONIC, &sev, &timerid) == -1)
+    {
         perror("timer_create");
         exit(EXIT_FAILURE);
     }
 
     // Create a timer file descriptor
     int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
-    if (timerfd == -1) {
+    if (timerfd == -1)
+    {
         perror("timerfd_create");
         exit(EXIT_FAILURE);
     }
@@ -220,7 +219,8 @@ static int __listen_to_clients(void)
     its.it_interval.tv_sec = D_HEALTH_PROBE_INTERVAL_SEC;
     its.it_interval.tv_nsec = 0;
 
-    if (timerfd_settime(timerfd, 0, &its, NULL) == -1) {
+    if (timerfd_settime(timerfd, 0, &its, NULL) == -1)
+    {
         perror("timer_settime");
         exit(EXIT_FAILURE);
     }
@@ -230,8 +230,8 @@ static int __listen_to_clients(void)
     sa.sa_flags = 0; // or SA_RESTART to auto-restart interrupted system calls
     sigemptyset(&sa.sa_mask);
 
-
-    if (sigaction(SIGPIPE, &sa, NULL) == -1) {
+    if (sigaction(SIGPIPE, &sa, NULL) == -1)
+    {
         perror("sigaction");
         return 1;
     }
@@ -260,10 +260,9 @@ static int __listen_to_clients(void)
 
     fds[RMD_FD_POLL_MON].fd = __mon_process.pipes.read;
     fds[RMD_FD_POLL_MON].events = POLLIN;
-    
+
     fds[RMD_FD_HEALTH_PROBE].fd = timerfd;
     fds[RMD_FD_HEALTH_PROBE].events = POLLIN;
-
 
     int poll_value;
 
@@ -373,25 +372,19 @@ static int __listen_to_clients(void)
         }
         if (fds[RMD_FD_POLL_FM].revents & POLLIN)
         {
-            char fm_buffer[COMMUNICATION_BUFFER_SIZE];
-            ssize_t length;
-            if ((length = read(fds[RMD_FD_POLL_FM].fd, fm_buffer, COMMUNICATION_BUFFER_SIZE)) > 0)
-            {
-                syslog(LOG_NOTICE, "Received message from reportman_fm: %s", fm_buffer);
+            ipc_get_command(&__fm_process.pipes, &command, 5);
+            if (command == IPC_COMMAND_PANIC) {
+                syslog(LOG_CRIT, "Received IPC_COMMAND_PANIC from reportman_mon process.");    
+                __clean_close(signal_fd, timerfd, timerid, EXIT_FAILURE);
             }
         }
         if (fds[RMD_FD_POLL_MON].revents & POLLIN)
         {
-            test_data_t test_data;
-            ipc_get_test_data(&__mon_process.pipes, &test_data);
-            test_data_t test_data1 = {
-                .test_bool = true,
-                .test_num = 200,
-                .test_string = "response from parent",
-            };
-            printf("%d\n%s\n%s\n", test_data.test_num, test_data.test_string, test_data.test_bool ? "true" : "false");
-            ipc_send_test_data(&__mon_process.pipes, &test_data1);
-
+            ipc_get_command(&__mon_process.pipes, &command, 5);
+            if (command == IPC_COMMAND_PANIC) {
+                syslog(LOG_CRIT, "Received IPC_COMMAND_PANIC from reportman_mon process.");    
+                __clean_close(signal_fd, timerfd, timerid, EXIT_FAILURE);
+            }
         }
         // TODO MAKE FUNCTION WITH LESS NESTED LOGIC
         // __should_restart()
@@ -409,70 +402,21 @@ static int __listen_to_clients(void)
                 perror("timer_settime");
                 exit(EXIT_FAILURE);
             }
-            IPC_COMMANDS command;
-            __current_process = &__fm_process;
-            int is_alive = kill(__fm_process.pid, 0);
-            if (is_alive != 0)
-            {
-                if( __fm_process.retries++ > __fm_process.max_retries)
-                {
-                    syslog(LOG_ERR, "reportman_fm did not ACK. Max retries reached. Exiting.");
-                    __clean_close(signal_fd, timerfd, timerid);
-                    exit(EXIT_FAILURE);
-                }
-               syslog(LOG_ERR, "reportman_fm procesess died. Attempting to restart. (%d/%d)", __fm_process.retries, __fm_process.max_retries);
-                __child_spawn(&__fm_process, NULL);
-                __reportman_fm_get_timers(&__fm_process.pipes);
-            } else{
-                ipc_send_health_probe(&__fm_process.pipes);
-                if(!(ipc_get_command(&__fm_process.pipes, &command)) || command != IPC_COMMAND_ACK) {
-                    if( __fm_process.retries++ > __fm_process.max_retries)
-                    {
-                        syslog(LOG_ERR, "reportman_fm did not ACK. Max retries reached. Exiting.");
-                        __clean_close(signal_fd, timerfd, timerid);
-                        exit(EXIT_FAILURE);
-                    }
-                    syslog(LOG_ERR, "reportman_fm not ACK health probe. Attempting to restart. (%d/%d)", __fm_process.retries, __fm_process.max_retries);
-                    kill(__fm_process.pid, SIGTERM);
-                    waitpid(__fm_process.pid, NULL, 0);
-                    __child_spawn(&__fm_process, NULL);
-                    __reportman_fm_get_timers(&__fm_process.pipes);
-                }
+            ipc_get_command(&__fm_process.pipes, &command, 1);
+            if (command == IPC_COMMAND_PANIC) {
+                syslog(LOG_CRIT, "Received IPC_COMMAND_PANIC from reportman_mon process.");    
+                __clean_close(signal_fd, timerfd, timerid, EXIT_FAILURE);
             }
-
-            __current_process = &__mon_process;
-
-            is_alive = kill(__mon_process.pid, 0);
-            if(is_alive !=  0){
-                if( __mon_process.retries++ > __mon_process.max_retries)
-                {
-                    syslog(LOG_ERR, "reportman_mon did not ACK. Max retries reached. Exiting.");
-                    __clean_close(signal_fd, timerfd, timerid);
-                    exit(EXIT_FAILURE);
-                }
-                syslog(LOG_ERR, "reportman_fm procesess died. Attempting to restart. (%d/%d)", __mon_process.retries, __mon_process.max_retries);                
-                __child_spawn(&__mon_process, NULL);
-
-            } else {
-                ipc_send_health_probe(&__mon_process.pipes);
-                if(!(ipc_get_command(&__mon_process.pipes, &command)) || command != IPC_COMMAND_ACK) {
-                    if( __mon_process.retries++ > __mon_process.max_retries)
-                    {
-                        syslog(LOG_ERR, "reportman_mon did not ACK. Max retries reached. Exiting.");
-                        __clean_close(signal_fd, timerfd, timerid);
-                        exit(EXIT_FAILURE);
-                    }
-                    syslog(LOG_ERR, "reportman_mon not ACK health probe. Attempting to restart. (%d/%d)", __mon_process.retries, __mon_process.max_retries);
-                    kill(__mon_process.pid, SIGTERM);
-                    waitpid(__mon_process.pid, NULL, 0);
-                    __child_spawn(&__mon_process, NULL);
-                }
+            ipc_get_command(&__mon_process.pipes, &command, 1);
+            if (command == IPC_COMMAND_PANIC) {
+                syslog(LOG_CRIT, "Received IPC_COMMAND_PANIC from reportman_mon process.");    
+                __clean_close(signal_fd, timerfd, timerid, EXIT_FAILURE);
             }
-            __current_process = NULL;
-
+            __health_probe_child_process(&__fm_process, &__reportman_fm_get_timers);
+            __health_probe_child_process(&__mon_process, NULL);
         }
     }
-    __clean_close(signal_fd, timerfd, timerid);
+    __clean_close(signal_fd, timerfd, timerid, EXIT_SUCCESS);
     return D_SUCCESS;
 }
 void __send_health_probe(child_process_t *child)
@@ -754,28 +698,17 @@ static void __handle_command(char *command, unsigned long long int client_idk, c
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 /// @brief Kills all child processes of this parent one
-/// @param  
-static void __kill_children(void) {
-    if (__fm_process.pid > 0)
-    {
-        kill(__fm_process.pid, SIGTERM);
-    }
-    if (__mon_process.pid > 0)
-    {
-        kill(__mon_process.pid, SIGTERM);
-    }
-    int status;
-    if (__fm_process.pid > 0)
-    {
-        waitpid(__fm_process.pid,  &status, 0);
-    }
-    if (__mon_process.pid > 0)
-    {
-        waitpid(__mon_process.pid, &status, 0);
-    }
+/// @param
+static int __kill_children(void)
+{
 
+    kill(0, SIGTERM);
+
+    int status;
+    waitpid(0, &status, 0);
+    return status;
 }
-static void __clean_close(int signal_fd, int timerfd, timer_t timerid)
+static void __clean_close(int signal_fd, int timerfd, timer_t timerid, int exit_code)
 {
     close(timerfd);
     close(__fm_process.pipes.read);
@@ -788,8 +721,9 @@ static void __clean_close(int signal_fd, int timerfd, timer_t timerid)
     close(signal_fd);
 
     close(d_socket);
-    exit(EXIT_SUCCESS);
+    exit(exit_code);
 }
+
 #pragma GCC diagnostic pop
 
 int __force_singleton(int singleton_result, unsigned short port)
@@ -828,7 +762,7 @@ static int __is_daemon(void)
 
 /// @brief Waits for reportman_fm to send timer data
 /// @return returns success of function
-static int __reportman_fm_get_timers(ipc_pipes_t *pipes)
+static int __reportman_fm_get_timers(child_process_t *process)
 {
     struct timeval timeout;
 
@@ -840,9 +774,9 @@ static int __reportman_fm_get_timers(ipc_pipes_t *pipes)
 
     // Initialize the file descriptor set
     FD_ZERO(&set);
-    FD_SET(pipes->read, &set);
+    FD_SET(process->pipes.read, &set);
 
-    int read_fm = select(pipes->read + 1, &set, NULL, NULL, &timeout);
+    int read_fm = select(process->pipes.read + 1, &set, NULL, NULL, &timeout);
 
     if (read_fm == D_FAILURE)
     {
@@ -854,9 +788,9 @@ static int __reportman_fm_get_timers(ipc_pipes_t *pipes)
         syslog(LOG_ERR, "reportman_fm did not respond after %lds, exiting...: %s", timeout_secs, strerror(errno));
         exit(EXIT_FAILURE);
     }
-    if (FD_ISSET(pipes->read, &set))
+    if (FD_ISSET(process->pipes.read, &set))
     {
-        unsigned long temp_timer = ipc_get_ulong(pipes);
+        unsigned long temp_timer = ipc_get_ulong(&process->pipes);
         if (temp_timer != R_IPC_VALUE_UINT_FLAG)
         {
             __backup_timer = (timer_t)temp_timer;
@@ -866,7 +800,7 @@ static int __reportman_fm_get_timers(ipc_pipes_t *pipes)
             syslog(LOG_ERR, "reportman_fm did not send backup timer, exiting...: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
-        temp_timer = ipc_get_ulong(pipes);
+        temp_timer = ipc_get_ulong(&process->pipes);
         if (temp_timer != R_IPC_VALUE_UINT_FLAG)
         {
             __transfer_timer = (timer_t)temp_timer;
@@ -1101,14 +1035,45 @@ static bool __remove_last_item_path(const char path[PATH_MAX], char directory[PA
     return true;
 }
 
-
-static void __child_spawn(child_process_t *child, const char **extra_args){
+static void __child_spawn(child_process_t *child, const char **extra_args)
+{
     start_child_process(child, extra_args, d_socket);
     syslog(LOG_DEBUG, "%s running as child (%d)", child->executable, child->pid);
     acknowledge_client(&child->pipes);
+} 
+void __handle_sigpipe(int sig)
+{
+    syslog(LOG_ERR, "Pipe closed. (%d) Process %s closed unexpectedly.", sig, __current_process->executable);
 }
 
-void __handle_sigpipe(int sig) {
-    syslog(LOG_ERR, "Received SIGPIPE. Exiting.");
-    syslog(LOG_ERR, "Received SIGPIPE. Process %s closed unexpectedly.", __current_process->executable);
+static int __health_probe_child_process(child_process_t *child, int (*post_proc_launch)(child_process_t *))
+{
+    __current_process = child;
+    IPC_COMMANDS command;
+
+    child->is_alive = kill(child->pid, 0) == 0;
+    if (child->is_alive)
+    {
+        ipc_send_health_probe(&child->pipes);
+        int ipc_get_result = ipc_get_command(&child->pipes, &command, R_IPC_TIMEOUT);
+        if (ipc_get_result == true )
+            return D_SUCCESS;
+        else if(ipc_get_result == R_IPC_TIMEOUT) 
+            syslog(LOG_ERR, "%s did not ACK in time.", child->executable);
+        kill(child->pid, SIGTERM);
+        waitpid(child->pid, NULL, 0);
+        child->is_alive = false;
+    }
+    if (child->retries++ > child->max_retries)
+    {
+        syslog(LOG_ERR, "%s did not ACK. Max retries reached. Exiting.", child->executable);
+        exit(EXIT_FAILURE);
+    }
+
+    syslog(LOG_ERR, "%s procesess died. Attempting to restart. (%d/%d)", child->executable, child->retries, child->max_retries);
+    __child_spawn(child, NULL);
+    if (post_proc_launch != NULL)
+        post_proc_launch(child);
+    __current_process = NULL;
+    return D_SUCCESS;
 }

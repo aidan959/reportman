@@ -12,10 +12,12 @@
 #define R_IPC_COMMAND_NO 0xFF000000
 #define R_IPC_COMMAND_YES 0xFF000001
 #define R_IPC_COMMAND_ACK 0xFF000002
+#define R_IPC_COMMAND_PANIC 0xFFACFFAC
+
 #define R_IPC_COMMAND_HEALTH_PROBE 0xFF000003
 #define R_IPC_VALUE_UINT_FLAG 0xF0000000
 #define R_IPC_VALUE_UINT_MAX 0xEFFFFFFF
-
+#define IPC_TIMEOUT_ERR -3
 typedef struct
 {
     char *path;
@@ -77,6 +79,7 @@ typedef enum {
     IPC_COMMAND_NO  = R_IPC_COMMAND_NO,
     IPC_COMMAND_YES = R_IPC_COMMAND_YES,
     IPC_COMMAND_ACK = R_IPC_COMMAND_ACK,
+    IPC_COMMAND_PANIC = R_IPC_COMMAND_PANIC,
     IPC_COMMAND_HEALTH_PROBE = R_IPC_COMMAND_HEALTH_PROBE,
 } IPC_COMMANDS;
 typedef struct
@@ -122,7 +125,7 @@ typedef struct {
     unsigned short max_retries;
     unsigned short retries;
     const char *executable;
-
+    bool is_alive;
 } child_process_t;
 
 

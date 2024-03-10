@@ -39,28 +39,25 @@ int main(int argc, char *argv[])
 }
 static int __monitor_paths(void)
 {
+    bool panic = false;
     int signal_fd;
     int inotify_fd;
     struct pollfd fds[FM_FD_POLL_MAX];
     monitor_t monitor = {};
-    mt_initialize_log_file();
+    if(mt_initialize_log_file() == M_LOG_FILE_CREATE_ERR) {
+        ipc_send_panic(&__monitor_args.pipes, "Log file could not be created.", &panic);
+    }
 
     mt_update_monitor_conf(&__monitor_args.conf);
 
     if (__monitor_args.no_dirs < 1)
-    {
-        syslog(LOG_ERR, "At least one directory should be passed to monitor_paths.");
-        exit(EXIT_FAILURE);
-    }
-
+        ipc_send_panic(&__monitor_args.pipes, "At least one directory should be passed to monitor_paths.", &panic);
     
     if ((signal_fd = r_initialize_signals()) < 0)
-    {
-        syslog(LOG_ALERT, "Could not initialize signals");
-        exit(EXIT_FAILURE);
-    }
+        ipc_send_panic(&__monitor_args.pipes, "Could not initialize signals.", &panic);
 
     char monitor_list_message[PATH_MAX * 4] = "";
+    if(!panic)
     for(size_t i =0; i < __monitor_args.no_dirs; i++){
         if (__monitor_args.dirs[i] == NULL){
             syslog(LOG_ERR, "Directory provided %lu is NULL", i);
@@ -79,9 +76,9 @@ static int __monitor_paths(void)
     if ((inotify_fd = mt_initialize_inotify(__monitor_args.no_dirs, __monitor_args.dirs, &monitor)) < 0)
     {
         syslog(LOG_CRIT, "Could not initialize inotify.");
-        exit(EXIT_FAILURE);
+        ipc_send_command(&__monitor_args.pipes, IPC_COMMAND_PANIC);
+        panic = true;
     }
-
 
     // enable polling
     fds[FM_FD_POLL_SIGNAL].fd = signal_fd;
@@ -93,10 +90,13 @@ static int __monitor_paths(void)
     nfds_t poll_count;
     if(__monitor_args.pipes.read > 0)
         poll_count = (nfds_t)FM_FD_POLL_MAX;
+    else if(panic)
+        poll_count = (nfds_t)1;
     else
-        poll_count = (nfds_t)FM_FD_POLL_MAX - 1; 
+        poll_count = (nfds_t)FM_FD_POLL_MAX - (nfds_t)1; 
     for (;;)
     {
+
         // blocks to read for parent / signals / inotify events
         if (poll(fds, poll_count, -1) < 0)
         {
@@ -108,6 +108,7 @@ static int __monitor_paths(void)
         // INOTIFY event received
         if (fds[MT_FD_POLL_INOTIFY].revents & POLLIN)
         {
+            
             char buffer[INOTIFY_BUFFER_SIZE];
             ssize_t length;
 
@@ -130,7 +131,7 @@ static int __monitor_paths(void)
         if(fds[FM_FD_POLL_PARENT].revents & POLLIN)
         {
             IPC_COMMANDS command;
-            if(!ipc_get_command(&__monitor_args.pipes, &command)) {
+            if(!ipc_get_command(&__monitor_args.pipes, &command, R_IPC_TIMEOUT)) {
                 syslog(LOG_ERR, "Unexpected error reading command from daemon.");
             }
             else
@@ -141,6 +142,9 @@ static int __monitor_paths(void)
                         syslog(LOG_ERR, "Failed to send ACK to daemon.");
                     };
                     break;
+                case IPC_COMMAND_PANIC:
+                    syslog(LOG_NOTICE, "IPC_COMMAND_PANIC received.");
+                    exit(EXIT_FAILURE);
                 case IPC_COMMAND_NO:
                 case IPC_COMMAND_YES:
                 case IPC_COMMAND_ACK:
@@ -178,12 +182,12 @@ static int __monitor_paths(void)
     }
 
     mt_shutdown_inotify(inotify_fd, &monitor);
-
     mt_shutdown_signals(signal_fd, &__monitor_args.pipes);
 
     mt_close_log_file();
 
     syslog(LOG_NOTICE, "reportman_mon exited successfully.");
+
     exit(EXIT_SUCCESS);
 }
 
@@ -292,16 +296,6 @@ static int __started_from_daemon(void)
 
     syslog(LOG_NOTICE, "reportman_mon started by daemon.");
     acknowledge_daemon(&__monitor_args.pipes);
-
-    test_data_t test_data = {
-        .test_bool = false,
-        .test_num = 100,
-        .test_string = "blahhhhh",
-    };
-    ipc_send_test_data(&__monitor_args.pipes, &test_data);
-
-    ipc_get_test_data(&__monitor_args.pipes, &test_data);
-    syslog(LOG_WARNING, "%d\n%s\n%s\n", test_data.test_num, test_data.test_string, test_data.test_bool ? "true" : "false");
 
     return __monitor_paths();
 }

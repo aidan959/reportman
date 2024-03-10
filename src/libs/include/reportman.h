@@ -79,9 +79,9 @@ bool ipc_is_no(unsigned long msg);
 bool ipc_is_ulong(unsigned long msg);
 
 bool ipc_send_command(ipc_pipes_t *pipes, IPC_COMMANDS command);
-bool ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS * command);
+bool ipc_send_panic(ipc_pipes_t *pipes, const char* log, bool * panic);
 
-
+int ipc_get_command(ipc_pipes_t *pipes, IPC_COMMANDS * command, time_t timeout_secs);
 
 bool ipc_send_ulong(ipc_pipes_t *pipes, unsigned long value);
 

@@ -57,11 +57,7 @@ const char *str_transfer_name(transfer_method_t method)
 int init_directories(int num_dirs, const char **dirs)
 {
     for (int i = 0; i < num_dirs; i++)
-    {
-        int create_resp = __create_dir_if_not_exist(dirs[i], 0744);
-        if (create_resp < 0)
-            return -1;
-    }
+        __create_dir_if_not_exist(dirs[i], 0770);
     return 0;
 }
 
@@ -336,11 +332,22 @@ static void __start_timer(timer_t timerid, struct itimerspec *its)
 }
 static int __create_dir_if_not_exist(const char *directory, unsigned int mode)
 {
-    struct stat st = {0};
+    struct stat st;
 
-    if (stat(directory, &st) == -1)
-        return mkdir(directory, mode);
-    return 0;
+    if (stat(directory, &st) >= 0){
+        syslog(LOG_DEBUG, "Directory (%s) exists.", directory);
+        if(access(directory, R_OK | W_OK | X_OK ) == -1) {
+            syslog(LOG_ERR, "Process does not have permission to access the directory (%s) : %s", directory, strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        return D_SUCCESS;
+    }
+
+    if (mkdir(directory, mode) == -1){
+        syslog(LOG_ERR, "Could not create %s : %s", directory, strerror(errno));
+        exit(EXIT_FAILURE);
+    }        
+    return D_SUCCESS;
 }
 // TODO GENERISIZE THIS SOME HOW?
 static void __back_up_directory(int sigg_no)

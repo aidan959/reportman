@@ -145,6 +145,7 @@ void mt_shutdown_inotify(int inotify_fd, monitor_t *monitor)
         free(monitors[i].path);
         inotify_rm_watch(inotify_fd, monitors[i].wd);
     }
+
     free(monitors);
     close(inotify_fd);
 }
@@ -190,8 +191,6 @@ void mt_shutdown_signals(int signal_fd, ipc_pipes_t *pipes)
     close(pipes->read);
     close(pipes->write);
 
-    if(__log_file_fd != NULL)
-        fclose(__log_file_fd);
     close(signal_fd);
 }
 
@@ -206,7 +205,7 @@ int mt_initialize_log_file(void) {
         syslog(LOG_NOTICE, "Log file does not exist, creating... (%s)", __monitor_conf.log_file);
         file = fopen(__monitor_conf.log_file, "w");
         if (file == NULL) {
-            syslog(LOG_ERR,"Error creating log file: %s", strerror(errno));
+            syslog(LOG_ERR,"Error creating log file (%s): %s", __monitor_conf.log_file,  strerror(errno));
             return M_LOG_FILE_CREATE_ERR;
         }
         syslog(LOG_NOTICE, "Log file (%s) created", __monitor_conf.log_file);
@@ -221,6 +220,7 @@ int mt_initialize_log_file(void) {
     return M_LOG_FILE_EXISTED;
 }
 int mt_close_log_file(void) {
+    if(__log_file_fd  == NULL) return D_FAILURE;
     return fclose(__log_file_fd);
 }
 void mt_update_monitor_conf(monitor_conf_t * monitor_conf) {
